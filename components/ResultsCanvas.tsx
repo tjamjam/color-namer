@@ -138,6 +138,10 @@ function buildPoolTexture(clusters: ClusterDef[]) {
 
 // ---- Component --------------------------------------------------------------
 
+// Cap DPR at 1.5 — rendering at full 3× on retina gives no visible benefit
+// but triples the fragment shader workload
+const getDPR = () => Math.min(window.devicePixelRatio ?? 1, 1.5)
+
 export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) {
   const canvasRef  = useRef<HTMLCanvasElement>(null)
   const glRef      = useRef<WebGLRenderingContext | null>(null)
@@ -204,10 +208,6 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
     poolTexRef.current = newTex(gl)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0,0,0,255]))
     gl.uniform1i(gl.getUniformLocation(prog, "uPool"), 0)
-
-    // Cap DPR at 1.5 — rendering at full 3× on retina gives no visible benefit
-    // but triples the fragment shader workload
-    const getDPR = () => Math.min(window.devicePixelRatio ?? 1, 1.5)
 
     // Size canvas before the first frame so no stretched-pixel artifacts
     canvas.width  = Math.round(canvas.offsetWidth  * getDPR())
