@@ -1,7 +1,7 @@
 {
   "name": "color-namer",
   "displayName": "Color Namer",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Name that color. See what the world thinks.",
   "scripts": {
     "dev": "plasmo dev",
