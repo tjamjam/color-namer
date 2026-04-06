@@ -30,7 +30,7 @@ dist/
 .plasmo
 
 # typescript
-.tsbuildinfo
+*.tsbuildinfo
 key.json
 client_secret_*.json
 .playwright-mcp/
