@@ -30,6 +30,7 @@
       "storage"
     ],
     "host_permissions": [
+      "https://klvsxhdlfexpdriyvtpq.supabase.co/*",
       "https://api.datamuse.com/*",
       "https://api.mymemory.translated.net/*"
     ],
