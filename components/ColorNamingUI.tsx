@@ -2,11 +2,16 @@ import { useState, useEffect, useRef, useMemo } from "react"
 import { CHIPS, luminance, uiColor } from "~lib/palette"
 import { supabase } from "~lib/supabase"
 import ResultsCanvas from "~components/ResultsCanvas"
+import { useTranslations } from "~lib/i18n"
 import type { Chip } from "~lib/palette"
 import type { ClusterDef } from "~components/ResultsCanvas"
+import type { ColorVisionType } from "~lib/storage"
 
-import { Filter as ProfanityFilter } from "bad-words"
-const profanityFilter = new ProfanityFilter()
+import leoProfanity from "leo-profanity"
+import { Filter as BadWords } from "bad-words"
+
+const badWords = new BadWords()
+const LEO_SUPPORTED = new Set(["en", "fr", "ru"])
 
 async function checkSpelling(word: string): Promise<string[]> {
   if (word.length < 2) return []
@@ -71,11 +76,13 @@ function buildClusters(
 export default function ColorNamingUI({
   chip,
   userToken,
+  cvdType,
   onSubmitted,
   onNext,
 }: {
   chip: Chip
   userToken: string
+  cvdType: ColorVisionType
   onSubmitted: () => void
   onNext: () => void
 }) {
@@ -83,6 +90,7 @@ export default function ColorNamingUI({
   const [submittedName, setSubmittedName] = useState<string | null>(null)
   const [results, setResults] = useState<Result[] | null>(null)
   const [pools, setPools] = useState<RGB[][]>([])
+  const [cvdFallback, setCvdFallback] = useState(false)
   const [loading, setLoading] = useState(false)
   const [oneWordWarning, setOneWordWarning] = useState(false)
   const [profane, setProfane] = useState(false)
@@ -90,12 +98,19 @@ export default function ColorNamingUI({
   const inputRef = useRef<HTMLInputElement>(null)
   const oneWordTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
+  const t         = useTranslations()
   const lum       = luminance(chip.rgb)
   const col       = uiColor(chip.rgb)
   const glassBase = lum > 0.55 ? "rgba(0,0,0," : "rgba(255,255,255,"
   const glassBg   = `${glassBase}0.08)`
   const glassBorder = `${glassBase}0.12)`
-  const language  = navigator.language.split("-")[0]
+  const language       = navigator.language.split("-")[0]
+  const isCvdFiltered  = cvdType !== "none" && cvdType !== "unknown"
+  const MIN_CVD_RESULTS = 3
+
+  useEffect(() => {
+    leoProfanity.loadDictionary(LEO_SUPPORTED.has(language) ? language : "en")
+  }, [language])
 
   useEffect(() => {
     setResults(null)
@@ -104,6 +119,7 @@ export default function ColorNamingUI({
     setInput("")
     setOneWordWarning(false)
     setProfane(false)
+    setCvdFallback(false)
     setSuggestions([])
     if (oneWordTimerRef.current) clearTimeout(oneWordTimerRef.current)
     const t = setTimeout(() => inputRef.current?.focus(), 300)
@@ -141,13 +157,33 @@ export default function ColorNamingUI({
   }
 
   async function handleBlur() {
+    if (language !== "en") return
     const name = sanitize(input)
     if (!name || name.length < 2) return
     const s = await checkSpelling(name)
     setSuggestions(s)
   }
 
-  async function fetchResults(): Promise<Result[]> {
+  async function fetchResults(forceGeneral = false): Promise<Result[]> {
+    if (isCvdFiltered && !forceGeneral) {
+      const { data, error } = await supabase
+        .from("submissions")
+        .select("name")
+        .eq("color_hex", chip.hex)
+        .eq("language", language)
+        .eq("cvd_type", cvdType)
+
+      if (error || !data?.length) return []
+
+      const counts: Record<string, number> = {}
+      data.forEach((r) => { counts[r.name] = (counts[r.name] ?? 0) + 1 })
+      const total = data.length
+      return Object.entries(counts)
+        .map(([name, count]) => ({ name, count, pct: (count / total) * 100 }))
+        .sort((a, b) => b.pct - a.pct)
+        .slice(0, 10)
+    }
+
     const { data, error } = await supabase
       .from("color_name_counts")
       .select("name, count")
@@ -157,16 +193,25 @@ export default function ColorNamingUI({
       .limit(10)
 
     if (error || !data?.length) return []
-
     const total = data.reduce((sum, r) => sum + r.count, 0)
-    return data.map((r) => ({
-      name:  r.name,
-      count: r.count,
-      pct:   (r.count / total) * 100,
-    }))
+    return data.map((r) => ({ name: r.name, count: r.count, pct: (r.count / total) * 100 }))
   }
 
-  async function fetchPool(name: string): Promise<RGB[]> {
+  async function fetchPool(name: string, forceGeneral = false): Promise<RGB[]> {
+    if (isCvdFiltered && !forceGeneral) {
+      const { data } = await supabase
+        .from("submissions")
+        .select("color_hex")
+        .eq("language", language)
+        .eq("cvd_type", cvdType)
+        .eq("name", name)
+        .limit(60)
+
+      return (data ?? [])
+        .map((r) => CHIPS.find((c) => c.hex === r.color_hex)?.rgb)
+        .filter(Boolean) as RGB[]
+    }
+
     const { data } = await supabase
       .from("color_name_counts")
       .select("color_hex")
@@ -184,14 +229,14 @@ export default function ColorNamingUI({
     const name = sanitize(input)
     if (!name || loading) return
 
-    if (profanityFilter.isProfane(name)) {
+    if (leoProfanity.check(name) || (language === "en" && badWords.isProfane(name))) {
       setProfane(true)
       return
     }
     setProfane(false)
 
     // Spell-check gate: first Enter shows suggestions, second Enter submits anyway
-    if (suggestions.length === 0) {
+    if (language === "en" && suggestions.length === 0) {
       const s = await checkSpelling(name)
       if (s.length > 0) {
         setSuggestions(s)
@@ -208,6 +253,7 @@ export default function ColorNamingUI({
       locale:     navigator.language,
       language,
       user_token: userToken,
+      cvd_type:   cvdType,
     })
 
     const isDuplicate = error?.code === "23505"
@@ -217,6 +263,11 @@ export default function ColorNamingUI({
 
     let data = await fetchResults()
 
+    // Fall back to general results if not enough CVD-specific responses
+    const usingFallback = isCvdFiltered && data.length < MIN_CVD_RESULTS
+    if (usingFallback) data = await fetchResults(true)
+    setCvdFallback(usingFallback)
+
     // Ensure the user's answer appears even if the DB hasn't caught up
     if (!data.find((r) => r.name === name)) {
       data = [{ name, count: 1, pct: 0 }, ...data]
@@ -225,7 +276,7 @@ export default function ColorNamingUI({
       data.sort((a, b) => b.pct - a.pct)
     }
 
-    const poolData = await Promise.all(data.map((r) => fetchPool(r.name)))
+    const poolData = await Promise.all(data.map((r) => fetchPool(r.name, usingFallback)))
 
     setSubmittedName(name)
     setResults(data)
@@ -245,7 +296,7 @@ export default function ColorNamingUI({
   }
 
   const buttonStyle: React.CSSProperties = {
-    fontFamily:         "'Instrument Sans', -apple-system, sans-serif",
+    fontFamily:         "'Noto Sans', -apple-system, sans-serif",
     fontSize:           13,
     fontWeight:         500,
     letterSpacing:      "0.04em",
@@ -270,7 +321,7 @@ export default function ColorNamingUI({
         {/* "you said X" — top center */}
         <div style={{
           position:       "fixed",
-          top:            40,
+          top:            48,
           left:           0,
           right:          0,
           display:        "flex",
@@ -278,7 +329,7 @@ export default function ColorNamingUI({
           pointerEvents:  "none",
         }}>
           <p style={{ ...labelStyle, fontSize: 14, letterSpacing: "0.03em" }}>
-            you said &ldquo;{submittedName}&rdquo;
+            {t("youSaid", submittedName ?? "")}
           </p>
         </div>
 
@@ -316,7 +367,7 @@ export default function ColorNamingUI({
           </div>
         ))}
 
-        {/* First to name this color */}
+        {/* First to name */}
         {results.length === 0 && (
           <p style={{
             ...labelStyle,
@@ -327,7 +378,25 @@ export default function ColorNamingUI({
             opacity:   0.6,
             fontSize:  13,
           }}>
-            you&apos;re the first to name this one
+            {t("firstToName")}
+          </p>
+        )}
+
+        {/* CVD fallback notice */}
+        {cvdFallback && (
+          <p style={{
+            ...labelStyle,
+            position:   "fixed",
+            bottom:     80,
+            left:       "50%",
+            transform:  "translateX(-50%)",
+            opacity:    0.5,
+            fontSize:   11,
+            textAlign:  "center",
+            maxWidth:   320,
+            whiteSpace: "nowrap",
+          }}>
+            {t("cvdFallback")}
           </p>
         )}
 
@@ -341,7 +410,7 @@ export default function ColorNamingUI({
           justifyContent: "center",
         }}>
           <button onClick={onNext} style={buttonStyle}>
-            next color →
+            {t("nextColor")}
           </button>
         </div>
       </>
@@ -373,7 +442,7 @@ export default function ColorNamingUI({
 
   return (
     <div style={{ "--ui-color": col, maxWidth: 440, width: "100%", textAlign: "center" } as React.CSSProperties}>
-      <p style={{ ...labelStyle, marginBottom: 16 }}>what would you call this color?</p>
+      <p style={{ ...labelStyle, marginBottom: 16 }}>{t("prompt")}</p>
       <div style={{
         display:            "flex",
         borderRadius:       12,
@@ -392,13 +461,13 @@ export default function ColorNamingUI({
           onBlur={handleBlur}
           onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
           maxLength={30}
-          placeholder="type a name..."
+          placeholder={t("placeholder")}
           autoComplete="off"
           spellCheck={false}
           style={{
             flex:       1,
             padding:    "14px 18px",
-            fontFamily: "'Instrument Sans', -apple-system, sans-serif",
+            fontFamily: "'Noto Sans', -apple-system, sans-serif",
             fontSize:   16,
             fontWeight: 400,
             background: "transparent",
@@ -435,18 +504,18 @@ export default function ColorNamingUI({
       {/* Inline feedback — only one shown at a time, priority: profane > one-word > suggestions */}
       {profane && (
         <p style={{ marginTop: 8, fontSize: 12, letterSpacing: "0.04em", color: col, opacity: 0.65, transition: "color 0.8s ease" }}>
-          keep it clean
+          {t("keepItClean")}
         </p>
       )}
       {!profane && oneWordWarning && (
         <p style={{ marginTop: 8, fontSize: 12, letterSpacing: "0.04em", color: col, opacity: 0.65, transition: "color 0.8s ease" }}>
-          one word only
+          {t("oneWordOnly")}
         </p>
       )}
       {!profane && !oneWordWarning && suggestions.length > 0 && (
         <div style={{ marginTop: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
           <p style={{ fontSize: 12, letterSpacing: "0.04em", color: col, opacity: 0.55, margin: 0, transition: "color 0.8s ease" }}>
-            did you mean…
+            {t("didYouMean")}
           </p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
             {suggestions.map((s) => (
@@ -461,7 +530,7 @@ export default function ColorNamingUI({
                   color:              col,
                   fontSize:           17,
                   fontWeight:         500,
-                  fontFamily:         "'Instrument Sans', -apple-system, sans-serif",
+                  fontFamily:         "'Noto Sans', -apple-system, sans-serif",
                   letterSpacing:      "0.03em",
                   cursor:             "pointer",
                   backdropFilter:     "blur(10px)",

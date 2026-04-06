@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 128px; height: 128px; overflow: hidden; background: transparent; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<canvas id="c" width="128" height="128"></canvas>
+<script>
+const canvas = document.getElementById('c')
+const ctx = canvas.getContext('2d')
+const S = 128
+
+// Background — rounded square
+const r = 28
+ctx.beginPath()
+ctx.moveTo(r, 0)
+ctx.lineTo(S - r, 0)
+ctx.quadraticCurveTo(S, 0, S, r)
+ctx.lineTo(S, S - r)
+ctx.quadraticCurveTo(S, S, S - r, S)
+ctx.lineTo(r, S)
+ctx.quadraticCurveTo(0, S, 0, S - r)
+ctx.lineTo(0, r)
+ctx.quadraticCurveTo(0, 0, r, 0)
+ctx.closePath()
+ctx.fillStyle = '#4d9bda'
+ctx.fill()
+
+// Color palette — a spread of hues the extension uses
+const colors = [
+  // Blues
+  '#4d9bda','#3990c6','#0084bc','#2b7dce','#69b8e4','#8ab2e8','#9bc9f5',
+  // Teals / cyans
+  '#00a5ba','#008b98','#3fc3ac','#47c3a4','#36c3b6','#00a7bb','#9ad5db',
+  // Greens
+  '#82dbc0','#58c394','#5ba800','#1faa64','#00ab77','#83c147','#7fde9c',
+  // Oranges / yellows
+  '#dc4800','#f87000','#f49000','#f69500','#eb9d15','#ffa300','#ffc000',
+  // Reds / pinks
+  '#c85a5a','#e05050','#f07070','#d44','#c84',
+  // Purples
+  '#8860c8','#a060d0','#7050b8','#9080d0',
+]
+
+// Mosaic circle
+const cx = S / 2
+const cy = S / 2
+const radius = 46
+const tileSize = 5
+const border = 2.5
+
+// Clip to circle
+ctx.save()
+ctx.beginPath()
+ctx.arc(cx, cy, radius, 0, Math.PI * 2)
+ctx.clip()
+
+// Fill with random-colored tiles
+for (let y = cx - radius; y < cx + radius; y += tileSize) {
+  for (let x = cy - radius; x < cy + radius; x += tileSize) {
+    ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)]
+    ctx.fillRect(x, y, tileSize - 0.5, tileSize - 0.5)
+  }
+}
+
+ctx.restore()
+
+// White border ring
+ctx.beginPath()
+ctx.arc(cx, cy, radius, 0, Math.PI * 2)
+ctx.strokeStyle = 'rgba(255,255,255,0.7)'
+ctx.lineWidth = border * 2
+ctx.stroke()
+</script>
+</body>
+</html>

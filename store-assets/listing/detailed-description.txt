@@ -1,0 +1,15 @@
+Color Namer turns every new tab into a color experiment.
+
+Each time you open a new tab, you're presented with a color — a rich, full-screen hue. Your job: give it a single word name. Then submit.
+
+After you answer, you'll see how everyone else named the same color. The results appear as glowing mosaic circles — each one built from a constellation of color chips that share the same name. The bigger the circle, the more people said that word.
+
+Are you a "cerulean" person or a "sky blue" person? Does that warm orange read as "rust," "amber," or "burnt sienna"? Color Namer maps the gap between perception and language, one tab at a time.
+
+Features:
+— Minimal, distraction-free design. The color IS the interface.
+— Crowd-sourced results from real users around the world.
+— Responds in your browser's language — names are collected and shown per language.
+— No account required. No ads. No tracking beyond anonymous color submissions.
+
+A quiet, beautiful way to start every browsing session.

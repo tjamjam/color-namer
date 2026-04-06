@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 128px; height: 128px; overflow: hidden; background: transparent; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<canvas id="c" width="128" height="128"></canvas>
+<script>
+const canvas = document.getElementById('c')
+const ctx = canvas.getContext('2d')
+const S = 128
+
+// Orangey-red mosaic palette
+const colors = [
+  '#dc4800','#e03a00','#cc3300','#f04000','#e84200',
+  '#f86030','#f87050','#e85020','#d03000','#c82800',
+  '#f87000','#f06000','#e05000','#f09050','#e87040',
+  '#ff5500','#ee4400','#dd3300','#ff6620','#ff4410',
+  '#f05030','#e04020','#d83010','#c82000','#b81800',
+  '#ff7730','#f06828','#e05818','#d04808','#c03800',
+]
+
+// Mosaic circle — large, nearly fills the icon
+const cx = S / 2
+const cy = S / 2
+const radius = 52
+const tileSize = 6
+
+// Clip to circle
+ctx.save()
+ctx.beginPath()
+ctx.arc(cx, cy, radius, 0, Math.PI * 2)
+ctx.clip()
+
+for (let y = cy - radius; y < cy + radius; y += tileSize) {
+  for (let x = cx - radius; x < cx + radius; x += tileSize) {
+    ctx.fillStyle = colors[Math.floor(Math.random() * colors.length)]
+    ctx.fillRect(x, y, tileSize, tileSize)
+  }
+}
+
+ctx.restore()
+
+</script>
+</body>
+</html>

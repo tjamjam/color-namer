@@ -29,8 +29,6 @@ const FRAGMENT_SRC = `
   uniform float     uCounts[8];
   uniform vec2      uResolution;
   uniform float     uTime;
-  uniform float     uReveal;
-
   // Hash without sine — avoids diagonal banding (from ColorGrid.tsx)
   float rand(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -77,7 +75,12 @@ const FRAGMENT_SRC = `
     // Hard circular edge
     float alpha = step(minDist, hitRadius);
 
-    gl_FragColor = vec4(col, alpha * uReveal);
+    // Faint white border near the circle edge
+    const float BORDER = 4.0;
+    float inBorder = step(hitRadius - BORDER, minDist) * alpha;
+    col = mix(col, vec3(1.0), inBorder * 0.35);
+
+    gl_FragColor = vec4(col, alpha);
   }
 `
 
@@ -140,9 +143,7 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
   const rafRef     = useRef<number>(0)
   const poolTexRef = useRef<WebGLTexture | null>(null)
 
-  const revealRef      = useRef(0)
-  const revealStartRef = useRef<number | null>(null)
-  const clustersRef    = useRef(clusters)
+  const clustersRef    = useRef<ClusterDef[]>([])
   const poolWidthRef   = useRef(1)
   const offsetsRef     = useRef<number[]>([])
   const countsRef      = useRef<number[]>([])
@@ -150,7 +151,6 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
   // Uniform locations
   const uRes         = useRef<WebGLUniformLocation | null>(null)
   const uTime_       = useRef<WebGLUniformLocation | null>(null)
-  const uReveal_     = useRef<WebGLUniformLocation | null>(null)
   const uPoolWidth_  = useRef<WebGLUniformLocation | null>(null)
   const uCenters_    = useRef<WebGLUniformLocation | null>(null)
   const uRadii_      = useRef<WebGLUniformLocation | null>(null)
@@ -184,7 +184,6 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
 
     uRes.current        = gl.getUniformLocation(prog, "uResolution")
     uTime_.current      = gl.getUniformLocation(prog, "uTime")
-    uReveal_.current    = gl.getUniformLocation(prog, "uReveal")
     uPoolWidth_.current = gl.getUniformLocation(prog, "uPoolWidth")
     uCenters_.current   = gl.getUniformLocation(prog, "uCenters[0]")
     uRadii_.current     = gl.getUniformLocation(prog, "uRadii[0]")
@@ -207,9 +206,6 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
       const gl     = glRef.current
       const canvas = canvasRef.current
       if (!gl || !canvas) return
-
-      if (revealStartRef.current === null) revealStartRef.current = ts
-      revealRef.current = Math.min(1.0, (ts - revealStartRef.current) / 700)
 
       const dpr = window.devicePixelRatio ?? 1
       const cls = clustersRef.current
@@ -235,7 +231,6 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
 
       gl.uniform2f(uRes.current,         canvas.width, canvas.height)
       gl.uniform1f(uTime_.current,       ts / 1000)
-      gl.uniform1f(uReveal_.current,     revealRef.current)
       gl.uniform1f(uPoolWidth_.current,  poolWidthRef.current)
       gl.uniform2fv(uCenters_.current,   centersFlat)
       gl.uniform1fv(uRadii_.current,     radiiFlat)
@@ -253,22 +248,21 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
     return () => cancelAnimationFrame(rafRef.current)
   }, [])
 
-  // Rebuild pool texture + reset reveal when clusters change
+  // Rebuild pool texture when clusters change
   useEffect(() => {
-    clustersRef.current  = clusters
-    revealStartRef.current = null
-
     const gl = glRef.current
-    if (!gl || !poolTexRef.current || clusters.length === 0) return
+    if (gl && poolTexRef.current && clusters.length > 0) {
+      const { pixels, width, offsets, counts } = buildPoolTexture(clusters)
+      poolWidthRef.current = width
+      offsetsRef.current   = offsets
+      countsRef.current    = counts
 
-    const { pixels, width, offsets, counts } = buildPoolTexture(clusters)
-    poolWidthRef.current = width
-    offsetsRef.current   = offsets
-    countsRef.current    = counts
-
-    gl.activeTexture(gl.TEXTURE0)
-    gl.bindTexture(gl.TEXTURE_2D, poolTexRef.current)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
+      gl.activeTexture(gl.TEXTURE0)
+      gl.bindTexture(gl.TEXTURE_2D, poolTexRef.current)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
+    }
+    // Update clustersRef last so the draw loop never sees new circles with stale texture/offsets
+    clustersRef.current = clusters
   }, [clusters])
 
   // Resize observer

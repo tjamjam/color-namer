@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Privacy Policy — Color Namer</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 4rem 1.5rem;
+      color: #333;
+      line-height: 1.6;
+    }
+    h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.25rem; }
+    h2 { font-size: 1rem; font-weight: 600; margin: 2.5rem 0 0.75rem; }
+    p, li { color: #555; }
+    ul { padding-left: 1.25rem; }
+    li { margin-bottom: 0.25rem; }
+    .meta { color: #999; font-size: 0.875rem; margin-bottom: 3rem; }
+    a { color: #333; }
+    code { font-size: 0.875em; background: #f4f4f4; padding: 0.1em 0.3em; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <h1>Privacy Policy</h1>
+  <p class="meta">Last updated: April 2026</p>
+
+  <section>
+    <h2>What Color Namer collects</h2>
+    <p>
+      When you first install Color Namer, a random anonymous identifier (UUID)
+      is generated and stored locally in your browser using
+      <code>chrome.storage.local</code>. This identifier is never linked to your
+      name, email, Google account, or any other personal information.
+    </p>
+    <p>When you submit a color name, the following is sent to our database:</p>
+    <ul>
+      <li>The color you were shown (a hex value)</li>
+      <li>The name you typed</li>
+      <li>Your anonymous identifier</li>
+      <li>Your browser's language setting</li>
+      <li>Your color vision type, if you chose to share it (e.g. normal, red-green, blue-yellow)</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>How it's used</h2>
+    <p>
+      Submissions are used solely to aggregate color-naming statistics — to show
+      you and other users how people around the world name the same colors. The
+      anonymous identifier is used only to avoid counting the same person's
+      response twice for a given color. Color vision type data is collected to
+      help us understand how people with different vision types perceive and name colors.
+    </p>
+  </section>
+
+  <section>
+    <h2>Third-party services</h2>
+    <p>Color Namer makes requests to the following external services:</p>
+    <ul>
+      <li>
+        <strong>Supabase</strong> — stores submitted color names and aggregated
+        statistics. Data is hosted on Supabase's infrastructure.
+        See <a href="https://supabase.com/privacy" target="_blank">Supabase's privacy policy</a>.
+      </li>
+      <li>
+        <strong>Datamuse API</strong> — used to spell-check color names you type
+        (English only). Only the word being typed is sent. No identifying
+        information is included.
+      </li>
+      <li>
+        <strong>MyMemory</strong> — used as a fallback to translate UI text for
+        non-English users when on-device translation is unavailable. Only short
+        UI strings are sent, never your submitted color names.
+      </li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>What we don't do</h2>
+    <ul>
+      <li>We do not sell or share your data with third parties</li>
+      <li>We do not track your browsing history or activity outside this extension</li>
+      <li>We do not require an account or any personal information</li>
+      <li>We do not use cookies</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Data retention</h2>
+    <p>
+      Submitted color names are retained indefinitely to build the aggregate
+      dataset. Because submissions are anonymous, we have no way to identify or
+      delete a specific person's responses after submission.
+    </p>
+  </section>
+
+  <section>
+    <h2>Contact</h2>
+    <p>
+      For questions or concerns, open an issue on
+      <a href="https://github.com/tjamjam/color-namer/issues">GitHub</a>.
+    </p>
+  </section>
+</body>
+</html>

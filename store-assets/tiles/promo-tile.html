@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<!--
+  Promo tile generator for Color Namer Chrome extension.
+
+  To generate assets:
+  1. Open this file in Chrome
+  2. Open DevTools → three-dot menu → More tools → Sensors (or just use Device Mode)
+  3. Enable Device Mode (Ctrl+Shift+M), set to custom dimensions:
+       Small tile:  440 × 280
+       Large tile:  920 × 680
+  4. DevTools three-dot → "Capture screenshot"
+
+  Switch between tile sizes by editing the CSS variables at the top of <style>.
+  Switch background color and pool by editing TILE_BG and the pools below.
+-->
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Color Namer — Promo Tile</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      width:    100%;
+      height:   100%;
+      overflow: hidden;
+      font-family: 'Instrument Sans', -apple-system, sans-serif;
+    }
+
+    #tile {
+      position:        relative;
+      width:           100vw;
+      height:          100vh;
+      background:      #4d9bda;   /* ← change this to switch the bg color */
+      display:         flex;
+      align-items:     center;
+      justify-content: flex-start;
+      padding-left:    36px;
+    }
+
+    /* WebGL canvas — fills the tile, circles drawn on top */
+    #gl {
+      position: absolute;
+      inset:    0;
+      width:    100%;
+      height:   100%;
+    }
+
+    /* Glassmorphic input card — matches the real extension exactly */
+    .card {
+      position:         relative;
+      z-index:          2;
+      display:          flex;
+      flex-direction:   column;
+      align-items:      center;
+      gap:              14px;
+    }
+
+    .prompt {
+      font-size:      13px;
+      font-weight:    500;
+      letter-spacing: 0.04em;
+      text-transform: lowercase;
+      color:          rgba(255,255,255,0.9);
+      opacity:        0.85;
+    }
+
+    .input-row {
+      display:           flex;
+      border-radius:     10px;
+      overflow:          hidden;
+      backdrop-filter:   blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      background:        rgba(255,255,255,0.08);
+      border:            1px solid rgba(255,255,255,0.12);
+    }
+
+    .input-field {
+      padding:     11px 16px;
+      font-family: inherit;
+      font-size:   14px;
+      font-weight: 400;
+      color:       rgba(255,255,255,0.9);
+      background:  transparent;
+      border:      none;
+      outline:     none;
+      min-width:   160px;
+      pointer-events: none;
+    }
+
+    .input-field::placeholder {
+      color:   rgba(255,255,255,0.5);
+      opacity: 1;
+    }
+
+    .input-arrow {
+      padding:    11px 16px;
+      font-size:  16px;
+      color:      rgba(255,255,255,0.9);
+      opacity:    0.6;
+      background: transparent;
+      border:     none;
+    }
+
+    .hex {
+      font-size:      11px;
+      letter-spacing: 0.08em;
+      color:          rgba(255,255,255,0.9);
+      opacity:        0.4;
+    }
+
+    /* App name badge — bottom-right */
+    .app-name {
+      position:       absolute;
+      bottom:         18px;
+      right:          20px;
+      z-index:        3;
+      font-size:      13px;
+      font-weight:    600;
+      letter-spacing: 0.06em;
+      text-transform: lowercase;
+      color:          rgba(255,255,255,0.9);
+      opacity:        0.7;
+    }
+  </style>
+</head>
+<body>
+<div id="tile">
+  <canvas id="gl"></canvas>
+
+  <div class="card">
+    <p class="prompt">what would you call this color?</p>
+    <div class="input-row">
+      <input class="input-field" type="text" placeholder="type a name..." readonly />
+      <span class="input-arrow">→</span>
+    </div>
+    <p class="hex">#4d9bda</p>
+  </div>
+
+  <span class="app-name">color namer</span>
+</div>
+
+<script>
+// ── Pool data ─────────────────────────────────────────────────────────────
+// Hand-picked chips from palette.ts grouped by hue family.
+// Edit TILE_BG and pick a matching pool for visual consistency.
+
+const TILE_BG = '#4d9bda'   // ← keep in sync with CSS #tile background
+
+// Blue family — used when TILE_BG is a blue
+const POOL_BLUE = [
+  [77,155,218],[57,160,198],[0,132,188],[0,102,164],[102,151,219],
+  [0,129,205],[51,125,206],[105,184,228],[118,185,211],[0,106,162],
+  [35,159,215],[7,133,172],[25,162,194],[164,207,245],[175,204,247],
+  [140,178,232],[125,181,231],[100,188,201],[109,186,208],[154,212,219],
+  [166,209,225],[155,212,219],[154,213,209],[0,165,186],[0,139,152],
+]
+
+// Orange/red family
+const POOL_ORANGE = [
+  [220,72,0],[248,191,145],[236,112,89],[244,108,47],[240,112,0],
+  [202,90,0],[187,100,0],[254,146,124],[254,187,161],[245,156,0],
+  [255,149,0],[255,189,0],[219,126,21],[247,152,95],[251,149,109],
+  [252,188,153],[234,162,0],[254,190,114],[237,200,0],[223,205,0],
+]
+
+// Green/teal family
+const POOL_GREEN = [
+  [130,219,192],[88,195,148],[91,168,0],[0,144,24],[129,193,71],
+  [31,170,100],[0,171,119],[0,171,138],[0,166,177],[0,167,167],
+  [0,167,158],[63,195,172],[71,195,164],[54,195,182],[79,195,156],
+  [127,219,198],[133,219,185],[137,219,178],[156,220,94],[127,222,156],
+]
+
+// ── Circle definitions (x, y as fraction of tile size; r in px) ──────────
+// Each circle can use a different pool for visual variety.
+function getCircles(W, H) {
+  return [
+    { x: W * 0.70, y: H * 0.43, r: Math.min(W, H) * 0.23, pool: POOL_BLUE },
+    { x: W * 0.60, y: H * 0.78, r: Math.min(W, H) * 0.14, pool: POOL_GREEN },
+  ]
+}
+
+// ── Vertex shader ─────────────────────────────────────────────────────────
+const VERT = `
+  attribute vec2 aPos;
+  void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
+`
+
+// ── Fragment shader (verbatim from ResultsCanvas.tsx) ─────────────────────
+const FRAG = `
+  precision mediump float;
+
+  uniform sampler2D uPool;
+  uniform float     uPoolWidth;
+  uniform vec2      uCenters[8];
+  uniform float     uRadii[8];
+  uniform float     uOffsets[8];
+  uniform float     uCounts[8];
+  uniform vec2      uResolution;
+  uniform float     uTime;
+
+  float rand(vec2 p) {
+    vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+    p3 += dot(p3, p3.yzx + 19.19);
+    return fract((p3.x + p3.y) * p3.z);
+  }
+
+  void main() {
+    float hitRadius = 0.0;
+    float hitCount  = 1.0;
+    float hitOffset = 0.0;
+    float minDist   = 1e9;
+    bool  inCluster = false;
+
+    for (int i = 0; i < 8; i++) {
+      float r = uRadii[i];
+      if (r <= 0.0) continue;
+      float d = distance(gl_FragCoord.xy, uCenters[i]);
+      if (d < r && d < minDist) {
+        minDist   = d;
+        hitRadius = r;
+        hitCount  = uCounts[i];
+        hitOffset = uOffsets[i];
+        inCluster = true;
+      }
+    }
+
+    if (!inCluster) { gl_FragColor = vec4(0.0); return; }
+
+    const float RATE = 0.6;
+    vec2  block = floor(gl_FragCoord.xy / 2.0);
+    float phase = rand(block * 7.3);
+    float t0    = floor(uTime * RATE + phase);
+    vec2  off0  = vec2(t0 * 127.1, t0 * 311.7);
+
+    #define S(rv) texture2D(uPool, vec2((hitOffset + floor((rv) * hitCount) + 0.5) / uPoolWidth, 0.5)).rgb
+    vec3 col = S(rand(block + off0));
+    #undef S
+
+    float alpha = step(minDist, hitRadius);
+
+    const float BORDER = 4.0;
+    float inBorder = step(hitRadius - BORDER, minDist) * alpha;
+    col = mix(col, vec3(1.0), inBorder * 0.35);
+
+    gl_FragColor = vec4(col, alpha);
+  }
+`
+
+// ── WebGL setup ───────────────────────────────────────────────────────────
+const tile   = document.getElementById('tile')
+const canvas = document.getElementById('gl')
+const W = tile.offsetWidth
+const H = tile.offsetHeight
+const dpr = window.devicePixelRatio || 1
+canvas.width  = W * dpr
+canvas.height = H * dpr
+
+const gl = canvas.getContext('webgl', { alpha: true, premultipliedAlpha: false })
+gl.enable(gl.BLEND)
+gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA)
+
+function shader(type, src) {
+  const s = gl.createShader(type)
+  gl.shaderSource(s, src)
+  gl.compileShader(s)
+  return s
+}
+
+const prog = gl.createProgram()
+gl.attachShader(prog, shader(gl.VERTEX_SHADER, VERT))
+gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, FRAG))
+gl.linkProgram(prog)
+gl.useProgram(prog)
+
+const verts = new Float32Array([-1,-1, 1,-1, -1,1, 1,-1, 1,1, -1,1])
+gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer())
+gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW)
+const aPos = gl.getAttribLocation(prog, 'aPos')
+gl.enableVertexAttribArray(aPos)
+gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0)
+
+const circles = getCircles(W, H)
+
+// Build a single packed texture from all circle pools, recording per-circle offsets
+let texOffset = 0
+const allColors = []
+circles.forEach(c => {
+  c._offset = texOffset
+  c.pool.forEach(rgb => allColors.push(rgb))
+  texOffset += c.pool.length
+})
+const totalColors = allColors.length
+const poolData = new Uint8Array(totalColors * 4)
+allColors.forEach(([r,g,b], i) => {
+  poolData[i*4]   = r
+  poolData[i*4+1] = g
+  poolData[i*4+2] = b
+  poolData[i*4+3] = 255
+})
+const tex = gl.createTexture()
+gl.bindTexture(gl.TEXTURE_2D, tex)
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, totalColors, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, poolData)
+gl.uniform1i(gl.getUniformLocation(prog, 'uPool'), 0)
+
+const uRes      = gl.getUniformLocation(prog, 'uResolution')
+const uTime     = gl.getUniformLocation(prog, 'uTime')
+const uPoolW    = gl.getUniformLocation(prog, 'uPoolWidth')
+const uCenters  = gl.getUniformLocation(prog, 'uCenters[0]')
+const uRadii    = gl.getUniformLocation(prog, 'uRadii[0]')
+const uOffsets  = gl.getUniformLocation(prog, 'uOffsets[0]')
+const uCounts   = gl.getUniformLocation(prog, 'uCounts[0]')
+
+function draw(ts) {
+  const centersFlat = new Float32Array(16)
+  const radiiFlat   = new Float32Array(8)
+  const offsetsFlat = new Float32Array(8)
+  const countsFlat  = new Float32Array(8).fill(1)
+
+  circles.forEach((c, i) => {
+    centersFlat[i*2]   = c.x * dpr
+    centersFlat[i*2+1] = canvas.height - c.y * dpr
+    radiiFlat[i]   = c.r * dpr
+    offsetsFlat[i] = c._offset
+    countsFlat[i]  = c.pool.length
+  })
+
+  gl.viewport(0, 0, canvas.width, canvas.height)
+  gl.clearColor(0, 0, 0, 0)
+  gl.clear(gl.COLOR_BUFFER_BIT)
+
+  gl.uniform2f(uRes,     canvas.width, canvas.height)
+  gl.uniform1f(uTime,    ts / 1000)
+  gl.uniform1f(uPoolW,   totalColors)
+  gl.uniform2fv(uCenters, centersFlat)
+  gl.uniform1fv(uRadii,   radiiFlat)
+  gl.uniform1fv(uOffsets, offsetsFlat)
+  gl.uniform1fv(uCounts,  countsFlat)
+
+  gl.drawArrays(gl.TRIANGLES, 0, 6)
+  requestAnimationFrame(draw)
+}
+
+requestAnimationFrame(draw)
+</script>
+</body>
+</html>
