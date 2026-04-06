@@ -8,6 +8,7 @@ export const EN = {
   firstToName:  "you\u2019re the first to name this one",
   keepItClean:  "keep it clean",
   oneWordOnly:  "one word only",
+  submitError:  "something went wrong — try again",
   didYouMean:   "did you mean\u2026",
   colorsNamed:  "{0} / {1} colors named",
   respondingIn: "responding in {0} \u00b7 click to change",

@@ -92,6 +92,7 @@ export default function ColorNamingUI({
   const [loading, setLoading] = useState(false)
   const [oneWordWarning, setOneWordWarning] = useState(false)
   const [profane, setProfane] = useState(false)
+  const [submitError, setSubmitError] = useState(false)
   const [suggestions, setSuggestions] = useState<string[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const oneWordTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -117,6 +118,7 @@ export default function ColorNamingUI({
     setInput("")
     setOneWordWarning(false)
     setProfane(false)
+    setSubmitError(false)
     setCvdFallback(false)
     setSuggestions([])
     if (oneWordTimerRef.current) clearTimeout(oneWordTimerRef.current)
@@ -255,7 +257,11 @@ export default function ColorNamingUI({
     })
 
     const isDuplicate = error?.code === "23505"
-    if (error && !isDuplicate) console.error("Submit error:", error)
+    if (error && !isDuplicate) {
+      setSubmitError(true)
+      setLoading(false)
+      return
+    }
 
     onSubmitted()
 
@@ -495,18 +501,23 @@ export default function ColorNamingUI({
         {chip.hex}
       </p>
 
-      {/* Inline feedback — only one shown at a time, priority: profane > one-word > suggestions */}
-      {profane && (
+      {/* Inline feedback — only one shown at a time, priority: submitError > profane > one-word > suggestions */}
+      {submitError && (
+        <p style={{ marginTop: 8, fontSize: 12, letterSpacing: "0.04em", color: col, opacity: 0.65, transition: "color 0.8s ease" }}>
+          {t("submitError")}
+        </p>
+      )}
+      {!submitError && profane && (
         <p style={{ marginTop: 8, fontSize: 12, letterSpacing: "0.04em", color: col, opacity: 0.65, transition: "color 0.8s ease" }}>
           {t("keepItClean")}
         </p>
       )}
-      {!profane && oneWordWarning && (
+      {!submitError && !profane && oneWordWarning && (
         <p style={{ marginTop: 8, fontSize: 12, letterSpacing: "0.04em", color: col, opacity: 0.65, transition: "color 0.8s ease" }}>
           {t("oneWordOnly")}
         </p>
       )}
-      {!profane && !oneWordWarning && suggestions.length > 0 && (
+      {!submitError && !profane && !oneWordWarning && suggestions.length > 0 && (
         <div style={{ marginTop: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
           <p style={{ fontSize: 12, letterSpacing: "0.04em", color: col, opacity: 0.55, margin: 0, transition: "color 0.8s ease" }}>
             {t("didYouMean")}
