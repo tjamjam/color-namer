@@ -8,9 +8,7 @@ import type { ClusterDef } from "~components/ResultsCanvas"
 import type { ColorVisionType } from "~lib/storage"
 
 import leoProfanity from "leo-profanity"
-import { Filter as BadWords } from "bad-words"
 
-const badWords = new BadWords()
 const LEO_SUPPORTED = new Set(["en", "fr", "ru"])
 
 async function checkSpelling(word: string): Promise<string[]> {
@@ -122,8 +120,8 @@ export default function ColorNamingUI({
     setCvdFallback(false)
     setSuggestions([])
     if (oneWordTimerRef.current) clearTimeout(oneWordTimerRef.current)
-    const t = setTimeout(() => inputRef.current?.focus(), 300)
-    return () => clearTimeout(t)
+    const focusTimer = setTimeout(() => inputRef.current?.focus(), 300)
+    return () => clearTimeout(focusTimer)
   }, [chip])
 
   useEffect(() => {
@@ -229,7 +227,7 @@ export default function ColorNamingUI({
     const name = sanitize(input)
     if (!name || loading) return
 
-    if (leoProfanity.check(name) || (language === "en" && badWords.isProfane(name))) {
+    if (leoProfanity.check(name)) {
       setProfane(true)
       return
     }

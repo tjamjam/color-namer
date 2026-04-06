@@ -29,6 +29,7 @@ const FRAGMENT_SRC = `
   uniform float     uCounts[8];
   uniform vec2      uResolution;
   uniform float     uTime;
+  uniform float     uDPR;
   // Hash without sine — avoids diagonal banding (from ColorGrid.tsx)
   float rand(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
@@ -63,7 +64,7 @@ const FRAGMENT_SRC = `
     // One color per pixel: pick a random chip from this cluster's pool,
     // cycling at RATE with a per-pixel phase offset.
     const float RATE = 0.6;
-    vec2  block = floor(gl_FragCoord.xy / 2.0);
+    vec2  block = floor(gl_FragCoord.xy / (3.0 * uDPR));
     float phase = rand(block * 7.3);
     float t0    = floor(uTime * RATE + phase);
     vec2  off0  = vec2(t0 * 127.1, t0 * 311.7);
@@ -151,6 +152,7 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
   // Uniform locations
   const uRes         = useRef<WebGLUniformLocation | null>(null)
   const uTime_       = useRef<WebGLUniformLocation | null>(null)
+  const uDPR_        = useRef<WebGLUniformLocation | null>(null)
   const uPoolWidth_  = useRef<WebGLUniformLocation | null>(null)
   const uCenters_    = useRef<WebGLUniformLocation | null>(null)
   const uRadii_      = useRef<WebGLUniformLocation | null>(null)
@@ -184,6 +186,7 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
 
     uRes.current        = gl.getUniformLocation(prog, "uResolution")
     uTime_.current      = gl.getUniformLocation(prog, "uTime")
+    uDPR_.current       = gl.getUniformLocation(prog, "uDPR")
     uPoolWidth_.current = gl.getUniformLocation(prog, "uPoolWidth")
     uCenters_.current   = gl.getUniformLocation(prog, "uCenters[0]")
     uRadii_.current     = gl.getUniformLocation(prog, "uRadii[0]")
@@ -201,6 +204,10 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
     poolTexRef.current = newTex(gl)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0,0,0,255]))
     gl.uniform1i(gl.getUniformLocation(prog, "uPool"), 0)
+
+    // Size canvas before the first frame so no stretched-pixel artifacts
+    canvas.width  = Math.round(canvas.offsetWidth  * devicePixelRatio)
+    canvas.height = Math.round(canvas.offsetHeight * devicePixelRatio)
 
     function draw(ts: number) {
       const gl     = glRef.current
@@ -231,6 +238,7 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
 
       gl.uniform2f(uRes.current,         canvas.width, canvas.height)
       gl.uniform1f(uTime_.current,       ts / 1000)
+      gl.uniform1f(uDPR_.current,        dpr)
       gl.uniform1f(uPoolWidth_.current,  poolWidthRef.current)
       gl.uniform2fv(uCenters_.current,   centersFlat)
       gl.uniform1fv(uRadii_.current,     radiiFlat)
