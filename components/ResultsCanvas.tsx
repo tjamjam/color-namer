@@ -64,7 +64,7 @@ const FRAGMENT_SRC = `
     // One color per pixel: pick a random chip from this cluster's pool,
     // cycling at RATE with a per-pixel phase offset.
     const float RATE = 0.6;
-    vec2  block = floor(gl_FragCoord.xy / (3.0 * uDPR));
+    vec2  block = floor(gl_FragCoord.xy / uDPR);
     float phase = rand(block * 7.3);
     float t0    = floor(uTime * RATE + phase);
     vec2  off0  = vec2(t0 * 127.1, t0 * 311.7);
