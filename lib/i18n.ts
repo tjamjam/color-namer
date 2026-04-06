@@ -40,29 +40,26 @@ async function translateOne(text: string, lang: string): Promise<string> {
     try {
       const T = (self as any).Translator
       const avail = await T.availability({ sourceLanguage: "en", targetLanguage: lang })
-      console.log("[i18n] Chrome Translator availability:", avail)
       if (avail !== "unavailable") {
         const translator = await T.create({ sourceLanguage: "en", targetLanguage: lang })
         const result = await translator.translate(text)
         if (result) return result
       }
-    } catch (e) {
-      console.warn("[i18n] Chrome Translator error:", e)
+    } catch {
+      // Chrome Translator unavailable — fall through to MyMemory
     }
   }
 
   // Fallback: MyMemory (free, no API key, 50k chars/day)
   try {
     const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|${lang}&de=colornamer@noreply.local`
-    console.log("[i18n] Fetching MyMemory:", url)
     const res = await fetch(url)
     const data = await res.json()
-    console.log("[i18n] MyMemory response:", data)
     if (data.responseStatus === 200 && data.responseData?.translatedText) {
       return data.responseData.translatedText
     }
-  } catch (e) {
-    console.error("[i18n] MyMemory fetch error:", e)
+  } catch {
+    // MyMemory unavailable — return original text
   }
 
   return text
