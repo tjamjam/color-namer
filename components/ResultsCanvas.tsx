@@ -205,16 +205,20 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0,0,0,255]))
     gl.uniform1i(gl.getUniformLocation(prog, "uPool"), 0)
 
+    // Cap DPR at 1.5 — rendering at full 3× on retina gives no visible benefit
+    // but triples the fragment shader workload
+    const getDPR = () => Math.min(window.devicePixelRatio ?? 1, 1.5)
+
     // Size canvas before the first frame so no stretched-pixel artifacts
-    canvas.width  = Math.round(canvas.offsetWidth  * devicePixelRatio)
-    canvas.height = Math.round(canvas.offsetHeight * devicePixelRatio)
+    canvas.width  = Math.round(canvas.offsetWidth  * getDPR())
+    canvas.height = Math.round(canvas.offsetHeight * getDPR())
 
     function draw(ts: number) {
       const gl     = glRef.current
       const canvas = canvasRef.current
       if (!gl || !canvas) return
 
-      const dpr = window.devicePixelRatio ?? 1
+      const dpr = getDPR()
       const cls = clustersRef.current
       const n   = Math.min(cls.length, 8)
 
@@ -279,8 +283,8 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
     if (!canvas) return
     const ro = new ResizeObserver((entries) => {
       for (const e of entries) {
-        canvas.width  = Math.round(e.contentRect.width  * devicePixelRatio)
-        canvas.height = Math.round(e.contentRect.height * devicePixelRatio)
+        canvas.width  = Math.round(e.contentRect.width  * getDPR())
+        canvas.height = Math.round(e.contentRect.height * getDPR())
       }
     })
     ro.observe(canvas)
