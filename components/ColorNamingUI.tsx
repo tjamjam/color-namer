@@ -316,19 +316,32 @@ export default function ColorNamingUI({
       <>
         {clusters.length > 0 && <ResultsCanvas clusters={clusters} />}
 
-        {/* "you said X" — top center */}
+        {/* "you said X" + optional CVD fallback — top center */}
         <div style={{
           position:       "fixed",
           top:            48,
           left:           0,
           right:          0,
           display:        "flex",
-          justifyContent: "center",
+          flexDirection:  "column",
+          alignItems:     "center",
+          gap:            6,
           pointerEvents:  "none",
         }}>
           <p style={{ ...labelStyle, fontSize: 14, letterSpacing: "0.03em" }}>
             {t("youSaid", submittedName ?? "")}
           </p>
+          {cvdFallback && (
+            <p style={{
+              ...labelStyle,
+              fontSize:   11,
+              opacity:    0.45,
+              textAlign:  "center",
+              maxWidth:   320,
+            }}>
+              {t("cvdFallback")}
+            </p>
+          )}
         </div>
 
         {/* Cluster labels */}
@@ -380,23 +393,6 @@ export default function ColorNamingUI({
           </p>
         )}
 
-        {/* CVD fallback notice */}
-        {cvdFallback && (
-          <p style={{
-            ...labelStyle,
-            position:   "fixed",
-            bottom:     80,
-            left:       "50%",
-            transform:  "translateX(-50%)",
-            opacity:    0.5,
-            fontSize:   11,
-            textAlign:  "center",
-            maxWidth:   320,
-            whiteSpace: "nowrap",
-          }}>
-            {t("cvdFallback")}
-          </p>
-        )}
 
         {/* next color button — bottom center */}
         <div style={{
