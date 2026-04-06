@@ -17,8 +17,35 @@ jobs:
         run: npm run build
       - name: Package the extension into a zip artifact
         run: npm run package
-      - name: Browser Platform Publish
-        uses: PlasmoHQ/bpp@v3
-        with:
-          keys: ${{ secrets.SUBMIT_KEYS }}
-          artifact: build/chrome-mv3-prod.zip
+      - name: Upload and publish to Chrome Web Store
+        env:
+          CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          EXT_ID: pkmmbffclkcmdcnbcpbebekphlnnfdba
+        run: |
+          ACCESS_TOKEN=$(curl -s -X POST https://oauth2.googleapis.com/token \
+            -d client_id="$CLIENT_ID" \
+            -d client_secret="$CLIENT_SECRET" \
+            -d refresh_token="$REFRESH_TOKEN" \
+            -d grant_type=refresh_token | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+          echo "Uploading zip..."
+          UPLOAD=$(curl -s \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "x-goog-api-version: 2" \
+            -X PUT \
+            --data-binary @build/chrome-mv3-prod.zip \
+            "https://www.googleapis.com/upload/chromewebstore/v1.1/items/$EXT_ID")
+          echo "$UPLOAD"
+          echo "$UPLOAD" | python3 -c "import sys,json; s=json.load(sys.stdin)['uploadState']; print('Upload state:',s); exit(0 if s=='SUCCESS' else 1)"
+
+          echo "Publishing..."
+          PUBLISH=$(curl -s \
+            -H "Authorization: Bearer $ACCESS_TOKEN" \
+            -H "x-goog-api-version: 2" \
+            -H "Content-Length: 0" \
+            -X POST \
+            "https://www.googleapis.com/chromewebstore/v1.1/items/$EXT_ID/publish")
+          echo "$PUBLISH"
+          echo "$PUBLISH" | python3 -c "import sys,json; d=json.load(sys.stdin); exit(0 if 'error' not in d else 1)"
