@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef, useMemo } from "react"
 import { CHIPS, luminance, uiColor } from "~lib/palette"
-import { supabase } from "~lib/supabase"
 import ResultsCanvas from "~components/ResultsCanvas"
 import { useTranslations } from "~lib/i18n"
+import { useColorResults } from "~lib/useColorResults"
 import type { Chip } from "~lib/palette"
 import type { ClusterDef } from "~components/ResultsCanvas"
 import type { ColorVisionType } from "~lib/storage"
@@ -28,16 +28,10 @@ async function checkSpelling(word: string): Promise<string[]> {
   }
 }
 
-interface Result {
-  name: string
-  count: number
-  pct: number
-}
-
 type RGB = [number, number, number]
 
 function buildClusters(
-  results: Result[],
+  results: { name: string; pct: number; count: number }[],
   pools: RGB[][],
   submittedName: string,
   screenW: number,
@@ -84,17 +78,18 @@ export default function ColorNamingUI({
   onSubmitted: () => void
   onNext: () => void
 }) {
-  const [input, setInput] = useState("")
-  const [submittedName, setSubmittedName] = useState<string | null>(null)
-  const [results, setResults] = useState<Result[] | null>(null)
-  const [pools, setPools] = useState<RGB[][]>([])
-  const [cvdFallback, setCvdFallback] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const language = navigator.language.split("-")[0]
+
+  const {
+    results, pools, submittedName, cvdFallback,
+    loading, submitError, reset, submit,
+  } = useColorResults(chip, language, cvdType, userToken)
+
+  const [input,          setInput]          = useState("")
   const [oneWordWarning, setOneWordWarning] = useState(false)
-  const [profane, setProfane] = useState(false)
-  const [submitError, setSubmitError] = useState(false)
-  const [suggestions, setSuggestions] = useState<string[]>([])
-  const inputRef = useRef<HTMLInputElement>(null)
+  const [profane,        setProfane]        = useState(false)
+  const [suggestions,    setSuggestions]    = useState<string[]>([])
+  const inputRef        = useRef<HTMLInputElement>(null)
   const oneWordTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const t         = useTranslations()
@@ -103,23 +98,16 @@ export default function ColorNamingUI({
   const glassBase = lum > 0.55 ? "rgba(0,0,0," : "rgba(255,255,255,"
   const glassBg   = `${glassBase}0.08)`
   const glassBorder = `${glassBase}0.12)`
-  const language       = navigator.language.split("-")[0]
-  const isCvdFiltered  = cvdType !== "none" && cvdType !== "unknown"
-  const MIN_CVD_RESULTS = 3
 
   useEffect(() => {
     leoProfanity.loadDictionary(LEO_SUPPORTED.has(language) ? language : "en")
   }, [language])
 
   useEffect(() => {
-    setResults(null)
-    setPools([])
-    setSubmittedName(null)
+    reset()
     setInput("")
     setOneWordWarning(false)
     setProfane(false)
-    setSubmitError(false)
-    setCvdFallback(false)
     setSuggestions([])
     if (oneWordTimerRef.current) clearTimeout(oneWordTimerRef.current)
     const focusTimer = setTimeout(() => inputRef.current?.focus(), 300)
@@ -164,67 +152,6 @@ export default function ColorNamingUI({
     setSuggestions(s)
   }
 
-  async function fetchResults(forceGeneral = false): Promise<Result[]> {
-    if (isCvdFiltered && !forceGeneral) {
-      const { data, error } = await supabase
-        .from("submissions")
-        .select("name")
-        .eq("color_hex", chip.hex)
-        .eq("language", language)
-        .eq("cvd_type", cvdType)
-
-      if (error || !data?.length) return []
-
-      const counts: Record<string, number> = {}
-      data.forEach((r) => { counts[r.name] = (counts[r.name] ?? 0) + 1 })
-      const total = data.length
-      return Object.entries(counts)
-        .map(([name, count]) => ({ name, count, pct: (count / total) * 100 }))
-        .sort((a, b) => b.pct - a.pct)
-        .slice(0, 10)
-    }
-
-    const { data, error } = await supabase
-      .from("color_name_counts")
-      .select("name, count")
-      .eq("color_hex", chip.hex)
-      .eq("language", language)
-      .order("count", { ascending: false })
-      .limit(10)
-
-    if (error || !data?.length) return []
-    const total = data.reduce((sum, r) => sum + r.count, 0)
-    return data.map((r) => ({ name: r.name, count: r.count, pct: (r.count / total) * 100 }))
-  }
-
-  async function fetchPool(name: string, forceGeneral = false): Promise<RGB[]> {
-    if (isCvdFiltered && !forceGeneral) {
-      const { data } = await supabase
-        .from("submissions")
-        .select("color_hex")
-        .eq("language", language)
-        .eq("cvd_type", cvdType)
-        .eq("name", name)
-        .limit(60)
-
-      return (data ?? [])
-        .map((r) => CHIPS.find((c) => c.hex === r.color_hex)?.rgb)
-        .filter(Boolean) as RGB[]
-    }
-
-    const { data } = await supabase
-      .from("color_name_counts")
-      .select("color_hex")
-      .eq("language", language)
-      .eq("name", name)
-      .order("count", { ascending: false })
-      .limit(60)
-
-    return (data ?? [])
-      .map((r) => CHIPS.find((c) => c.hex === r.color_hex)?.rgb)
-      .filter(Boolean) as RGB[]
-  }
-
   async function handleSubmit() {
     const name = sanitize(input)
     if (!name || loading) return
@@ -245,47 +172,7 @@ export default function ColorNamingUI({
     }
     setSuggestions([])
 
-    setLoading(true)
-
-    const { error } = await supabase.from("submissions").insert({
-      color_hex:  chip.hex,
-      name,
-      locale:     navigator.language,
-      language,
-      user_token: userToken,
-      cvd_type:   cvdType,
-    })
-
-    const isDuplicate = error?.code === "23505"
-    if (error && !isDuplicate) {
-      setSubmitError(true)
-      setLoading(false)
-      return
-    }
-
-    onSubmitted()
-
-    let data = await fetchResults()
-
-    // Fall back to general results if not enough CVD-specific responses
-    const usingFallback = isCvdFiltered && data.length < MIN_CVD_RESULTS
-    if (usingFallback) data = await fetchResults(true)
-    setCvdFallback(usingFallback)
-
-    // Ensure the user's answer appears even if the DB hasn't caught up
-    if (!data.find((r) => r.name === name)) {
-      data = [{ name, count: 1, pct: 0 }, ...data]
-      const total = data.reduce((sum, r) => sum + r.count, 0)
-      data = data.map((r) => ({ ...r, pct: (r.count / total) * 100 }))
-      data.sort((a, b) => b.pct - a.pct)
-    }
-
-    const poolData = await Promise.all(data.map((r) => fetchPool(r.name, usingFallback)))
-
-    setSubmittedName(name)
-    setResults(data)
-    setPools(poolData)
-    setLoading(false)
+    await submit(name, onSubmitted)
   }
 
   const labelStyle: React.CSSProperties = {
@@ -398,7 +285,6 @@ export default function ColorNamingUI({
             {t("firstToName")}
           </p>
         )}
-
 
         {/* next color button — bottom center */}
         <div style={{
