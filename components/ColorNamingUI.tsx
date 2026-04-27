@@ -11,21 +11,48 @@ import leoProfanity from "leo-profanity"
 
 const LEO_SUPPORTED = new Set(["en", "fr", "ru"])
 
-async function checkSpelling(word: string): Promise<string[]> {
+async function fetchSuggestions(word: string): Promise<string[]> {
   if (word.length < 2) return []
   try {
     const res = await fetch(
       `https://api.datamuse.com/words?sp=${encodeURIComponent(word)}&max=10`
     )
     const data: { word: string }[] = await res.json()
-    if (data[0]?.word === word) return []
     return data
       .map((d) => d.word)
-      .filter((w) => !/[\s-]/.test(w))  // single words only
-      .slice(0, 3)
+      .filter((w) => !/[\s-]/.test(w))
   } catch {
     return []
   }
+}
+
+async function checkSpelling(name: string): Promise<string[]> {
+  const tokens = name.split(" ")
+  if (tokens.some((t) => t.length < 2)) return []
+
+  const perToken = await Promise.all(tokens.map(fetchSuggestions))
+
+  const allExact = tokens.every((t, i) => perToken[i][0] === t)
+  if (allExact) return []
+
+  const altsPerToken = tokens.map((t, i) => {
+    const list = perToken[i]
+    if (list.length === 0) return [t]
+    if (list[0] === t) return [t]
+    return list.slice(0, 3)
+  })
+
+  const phrases: string[] = []
+  const expand = (idx: number, acc: string[]) => {
+    if (idx === altsPerToken.length) {
+      phrases.push(acc.join(" "))
+      return
+    }
+    for (const w of altsPerToken[idx]) expand(idx + 1, [...acc, w])
+  }
+  expand(0, [])
+
+  return Array.from(new Set(phrases)).filter((p) => p !== name).slice(0, 3)
 }
 
 type RGB = [number, number, number]
@@ -85,12 +112,12 @@ export default function ColorNamingUI({
     loading, submitError, reset, submit,
   } = useColorResults(chip, language, cvdType, userToken)
 
-  const [input,          setInput]          = useState("")
-  const [oneWordWarning, setOneWordWarning] = useState(false)
-  const [profane,        setProfane]        = useState(false)
-  const [suggestions,    setSuggestions]    = useState<string[]>([])
+  const [input,               setInput]               = useState("")
+  const [tooManyWordsWarning, setTooManyWordsWarning] = useState(false)
+  const [profane,             setProfane]             = useState(false)
+  const [suggestions,         setSuggestions]         = useState<string[]>([])
   const inputRef        = useRef<HTMLInputElement>(null)
-  const oneWordTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const warningTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const t         = useTranslations()
   const lum       = luminance(chip.rgb)
@@ -106,10 +133,10 @@ export default function ColorNamingUI({
   useEffect(() => {
     reset()
     setInput("")
-    setOneWordWarning(false)
+    setTooManyWordsWarning(false)
     setProfane(false)
     setSuggestions([])
-    if (oneWordTimerRef.current) clearTimeout(oneWordTimerRef.current)
+    if (warningTimerRef.current) clearTimeout(warningTimerRef.current)
     const focusTimer = setTimeout(() => inputRef.current?.focus(), 300)
     return () => clearTimeout(focusTimer)
   }, [chip])
@@ -127,19 +154,25 @@ export default function ColorNamingUI({
   }, [results, pools, submittedName])
 
   function sanitize(str: string) {
-    return str.replace(/[^a-zA-Z0-9'-]/g, "").trim().toLowerCase()
+    return str
+      .replace(/[^a-zA-Z0-9'\- ]/g, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .toLowerCase()
   }
 
   function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const raw = e.target.value
-    if (/\s/.test(raw)) {
-      setInput(raw.replace(/\s/g, ""))
-      setOneWordWarning(true)
-      if (oneWordTimerRef.current) clearTimeout(oneWordTimerRef.current)
-      oneWordTimerRef.current = setTimeout(() => setOneWordWarning(false), 2000)
-    } else {
-      setInput(raw)
+    const cleaned = raw.replace(/^\s+/, "").replace(/\s+/g, " ")
+    const tooManySpaces = (cleaned.match(/ /g) ?? []).length > 1
+    const next = tooManySpaces ? cleaned.split(" ").slice(0, 2).join(" ") : cleaned
+
+    if (next !== raw) {
+      setTooManyWordsWarning(true)
+      if (warningTimerRef.current) clearTimeout(warningTimerRef.current)
+      warningTimerRef.current = setTimeout(() => setTooManyWordsWarning(false), 2000)
     }
+    setInput(next)
     setProfane(false)
     setSuggestions([])
   }
@@ -398,12 +431,12 @@ export default function ColorNamingUI({
           {t("keepItClean")}
         </p>
       )}
-      {!submitError && !profane && oneWordWarning && (
+      {!submitError && !profane && tooManyWordsWarning && (
         <p style={{ marginTop: 8, fontSize: 12, letterSpacing: "0.04em", color: col, opacity: 0.65, transition: "color 0.8s ease" }}>
-          {t("oneWordOnly")}
+          {t("tooManyWords")}
         </p>
       )}
-      {!submitError && !profane && !oneWordWarning && suggestions.length > 0 && (
+      {!submitError && !profane && !tooManyWordsWarning && suggestions.length > 0 && (
         <div style={{ marginTop: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
           <p style={{ fontSize: 12, letterSpacing: "0.04em", color: col, opacity: 0.55, margin: 0, transition: "color 0.8s ease" }}>
             {t("didYouMean")}

@@ -7,8 +7,8 @@ export const EN = {
   youSaid:      "you said \u201c{0}\u201d",
   firstToName:  "you\u2019re the first to name this one",
   keepItClean:  "keep it clean",
-  oneWordOnly:  "one word only",
-  submitError:  "something went wrong — try again",
+  tooManyWords: "up to two words",
+  submitError:  "something went wrong, try again",
   didYouMean:   "did you mean\u2026",
   colorsNamed:  "{0} / {1} colors named",
   respondingIn: "responding in {0} \u00b7 click to change",
@@ -69,7 +69,7 @@ async function translateOne(text: string, lang: string): Promise<string> {
 async function loadTranslations(lang: string): Promise<Strings> {
   if (lang === "en") return EN
 
-  const cacheKey = `i18n_v3_${lang}`
+  const cacheKey = `i18n_v4_${lang}`
   try {
     const cached = localStorage.getItem(cacheKey)
     if (cached) return JSON.parse(cached)

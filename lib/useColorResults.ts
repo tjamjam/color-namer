@@ -103,17 +103,14 @@ export function useColorResults(
     setLoading(true)
     setSubmitError(false)
 
-    const { error } = await supabase.from("submissions").upsert(
-      {
-        color_hex:  chip.hex,
-        name,
-        locale:     navigator.language,
-        language,
-        user_token: userToken,
-        cvd_type:   cvdType,
-      },
-      { onConflict: "color_hex,user_token" }
-    )
+    const { error } = await supabase.from("submissions").insert({
+      color_hex:  chip.hex,
+      name,
+      locale:     navigator.language,
+      language,
+      user_token: userToken,
+      cvd_type:   cvdType,
+    })
 
     if (error) {
       setSubmitError(true)
