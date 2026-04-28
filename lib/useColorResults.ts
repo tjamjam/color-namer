@@ -14,10 +14,13 @@ export type RGB = [number, number, number]
 
 const MIN_CVD_RESULTS = 3
 
-// Hard cap on rendered clusters. Must match the shader array sizes in
-// components/ResultsCanvas.tsx (uCenters[8] etc.) and the layout slice in
-// components/ColorNamingUI.tsx buildClusters.
+// Caps the after-naming view's data fetch and polar layout slice
+// (components/ColorNamingUI.tsx buildClusters).
 export const MAX_DISPLAYED = 8
+
+// Shader uniform array size in components/ResultsCanvas.tsx
+// (uCenters[64] etc.). Also caps the grid view in components/AllResultsView.tsx.
+export const MAX_GRID_CLUSTERS = 64
 
 export function useColorResults(
   chip:       Chip,

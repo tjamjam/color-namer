@@ -2,6 +2,7 @@ import { useState, useEffect } from "react"
 import { Settings } from "lucide-react"
 import ColorNamingUI from "~components/ColorNamingUI"
 import ColorBlindnessModal from "~components/ColorBlindnessModal"
+import AllResultsView from "~components/AllResultsView"
 import { CHIPS, pickUnnamedChip, uiColor, luminance } from "~lib/palette"
 import { getUserToken, getNamedColors, markColorNamed, getColorVisionType, setColorVisionType } from "~lib/storage"
 import { supabase } from "~lib/supabase"
@@ -20,6 +21,7 @@ export default function NewTab() {
   const [userToken, setUserToken] = useState<string | null>(null)
   const [cvdType, setCvdType] = useState<ColorVisionType | null | undefined>(undefined)
   const [showCvdModal, setShowCvdModal] = useState(false)
+  const [showAllResults, setShowAllResults] = useState(false)
   const [toast, setToast] = useState<{ kind: "success" | "error"; message: string } | null>(null)
 
   useEffect(() => {
@@ -27,6 +29,18 @@ export default function NewTab() {
     const timer = setTimeout(() => setToast(null), 3000)
     return () => clearTimeout(timer)
   }, [toast])
+
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key.toLowerCase() !== "r") return
+      if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return
+      const tag = (e.target as HTMLElement | null)?.tagName
+      if (tag === "INPUT" || tag === "TEXTAREA") return
+      setShowAllResults((v) => !v)
+    }
+    window.addEventListener("keydown", handleKey)
+    return () => window.removeEventListener("keydown", handleKey)
+  }, [])
 
   useEffect(() => {
     async function init() {
@@ -75,8 +89,9 @@ export default function NewTab() {
 
   async function handleSubmitted() {
     if (!chip) return
-    const updated = await markColorNamed(chip.hex, CHIPS.length)
-    setNamedCount(updated.length)
+    const { list, justCompleted } = await markColorNamed(chip.hex, CHIPS.length)
+    setNamedCount(list.length)
+    if (justCompleted) setShowAllResults(true)
   }
 
   async function handleNext() {
@@ -168,7 +183,7 @@ export default function NewTab() {
         <Settings size={22} strokeWidth={1.5} aria-hidden="true" />
       </button>
 
-      {/* Bottom center, colors named */}
+      {/* Bottom center, colors named + see-results hint or link */}
       <div style={{
         position:       "fixed",
         bottom:         20,
@@ -186,6 +201,30 @@ export default function NewTab() {
           transition:    "color 0.8s ease",
         }}>
           {t("colorsNamed", String(namedCount), String(CHIPS.length))}
+          {" ("}
+          {namedCount === CHIPS.length ? (
+            <button
+              onClick={() => setShowAllResults(true)}
+              style={{
+                background:     "none",
+                border:         "none",
+                padding:        0,
+                color:          col,
+                cursor:         "pointer",
+                fontSize:       "inherit",
+                fontFamily:     "inherit",
+                letterSpacing:  "inherit",
+                textDecoration: "underline",
+                opacity:        1,
+                pointerEvents:  "auto",
+                transition:     "color 0.8s ease",
+              }}>
+              {t("seeResultsLink")}
+            </button>
+          ) : (
+            <span style={{ opacity: 0.85 }}>{t("seeResultsHint")}</span>
+          )}
+          {")"}
         </span>
       </div>
 
@@ -239,6 +278,14 @@ export default function NewTab() {
           initialValue={cvdType}
           onSave={handleCvdSave}
           onDismiss={() => setShowCvdModal(false)}
+        />
+      )}
+
+      {showAllResults && (
+        <AllResultsView
+          userToken={userToken}
+          language={langCode}
+          onClose={() => setShowAllResults(false)}
         />
       )}
     </div>

@@ -1,13 +1,16 @@
-import { useEffect, useRef, useMemo } from "react"
+import { useEffect, useRef } from "react"
+
+export type ResultsCanvasMode = "circles" | "squares-split"
 
 export interface ClusterDef {
-  name: string
-  pct: number
-  count: number
-  pool: [number, number, number][]
-  x: number      // CSS px, top-left origin
-  y: number      // CSS px, top-left origin
-  r: number      // CSS px radius
+  name:   string
+  pct:    number
+  count:  number
+  pool:   [number, number, number][]
+  poolR?: [number, number, number][]   // squares-split mode: right half ("crowd")
+  x:      number   // CSS px, top-left origin
+  y:      number   // CSS px, top-left origin
+  r:      number   // CSS px. Radius in circle mode, half-side in squares mode.
   isUser: boolean
 }
 
@@ -18,21 +21,32 @@ const VERTEX_SRC = `
   void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
 `
 
-// Array sizes below MUST match MAX_DISPLAYED in lib/useColorResults.ts.
-// GLSL can't read JS, so this is a manual constraint.
+// Array sizes below MUST match MAX_GRID_CLUSTERS in lib/useColorResults.ts.
+// MAX_DISPLAYED (= 8) caps the after-naming view's data fetch; the shader
+// array is sized for the larger "your colors so far" grid view. Inactive
+// slots have radius 0 and are skipped at the top of the loop.
+//
+// uMode: 0 = circles (single pool from uOffsetsL/uCountsL).
+//        1 = squares-split (vertical halves; left uses uOffsetsL/uCountsL,
+//                            right uses uOffsetsR/uCountsR; empty right
+//                            renders as a dim neutral).
 const FRAGMENT_SRC = `
   precision mediump float;
 
   uniform sampler2D uPool;
   uniform float     uPoolWidth;
-  uniform vec2      uCenters[8];
-  uniform float     uRadii[8];
-  uniform float     uOffsets[8];
-  uniform float     uCounts[8];
+  uniform vec2      uCenters[64];
+  uniform float     uRadii[64];
+  uniform float     uOffsetsL[64];
+  uniform float     uCountsL[64];
+  uniform float     uOffsetsR[64];
+  uniform float     uCountsR[64];
   uniform vec2      uResolution;
   uniform float     uTime;
   uniform float     uDPR;
-  // Hash without sine — avoids diagonal banding (from ColorGrid.tsx)
+  uniform int       uMode;
+
+  // Hash without sine, avoids diagonal banding (from ColorGrid.tsx)
   float rand(vec2 p) {
     vec3 p3 = fract(vec3(p.xyx) * 0.1031);
     p3 += dot(p3, p3.yzx + 19.19);
@@ -41,47 +55,74 @@ const FRAGMENT_SRC = `
 
   void main() {
     // Find the nearest cluster this pixel falls inside.
-    // Inactive clusters have uRadii[i] == 0 and are skipped naturally.
-    float hitRadius = 0.0;
-    float hitCount  = 1.0;
-    float hitOffset = 0.0;
-    float minDist   = 1e9;
-    bool  inCluster = false;
+    float hitRadius   = 0.0;
+    float hitOffsetL  = 0.0;
+    float hitCountL   = 1.0;
+    float hitOffsetR  = 0.0;
+    float hitCountR   = 0.0;
+    vec2  hitDelta    = vec2(0.0);
+    float minDist     = 1e9;
+    bool  inCluster   = false;
 
-    for (int i = 0; i < 8; i++) {
+    for (int i = 0; i < 64; i++) {
       float r = uRadii[i];
       if (r <= 0.0) continue;
-      float d = distance(gl_FragCoord.xy, uCenters[i]);
-      if (d < r && d < minDist) {
-        minDist   = d;
-        hitRadius = r;
-        hitCount  = uCounts[i];
-        hitOffset = uOffsets[i];
-        inCluster = true;
+      vec2  delta = gl_FragCoord.xy - uCenters[i];
+      float dist  = (uMode == 0) ? length(delta) : max(abs(delta.x), abs(delta.y));
+      if (dist < r && dist < minDist) {
+        minDist     = dist;
+        hitRadius   = r;
+        hitOffsetL  = uOffsetsL[i];
+        hitCountL   = uCountsL[i];
+        hitOffsetR  = uOffsetsR[i];
+        hitCountR   = uCountsR[i];
+        hitDelta    = delta;
+        inCluster   = true;
       }
     }
 
     if (!inCluster) { gl_FragColor = vec4(0.0); return; }
 
-    // One color per pixel: pick a random chip from this cluster's pool,
-    // cycling at RATE with a per-pixel phase offset.
-    const float RATE = 0.6;
-    vec2  block = floor(gl_FragCoord.xy / uDPR);
-    float phase = rand(block * 7.3);
-    float t0    = floor(uTime * RATE + phase);
-    vec2  off0  = vec2(t0 * 127.1, t0 * 311.7);
+    // Pick which pool to sample from for this pixel.
+    float hitOffset = hitOffsetL;
+    float hitCount  = hitCountL;
+    bool  isRight   = (uMode == 1) && (hitDelta.x >= 0.0);
+    bool  emptyHalf = false;
+    if (isRight) {
+      if (hitCountR <= 0.0) {
+        emptyHalf = true;
+      } else {
+        hitOffset = hitOffsetR;
+        hitCount  = hitCountR;
+      }
+    }
 
-    #define S(rv) texture2D(uPool, vec2((hitOffset + floor((rv) * hitCount) + 0.5) / uPoolWidth, 0.5)).rgb
-    vec3 col = S(rand(block + off0));
-    #undef S
+    vec3 col;
+    if (emptyHalf) {
+      // Dim neutral signals "no crowd data for this name"
+      col = vec3(0.18, 0.18, 0.20);
+    } else {
+      // One color per pixel: pick a random chip from this cluster's pool,
+      // cycling at RATE with a per-pixel phase offset.
+      const float RATE = 0.6;
+      vec2  block = floor(gl_FragCoord.xy / uDPR);
+      float phase = rand(block * 7.3);
+      float t0    = floor(uTime * RATE + phase);
+      vec2  off0  = vec2(t0 * 127.1, t0 * 311.7);
 
-    // Hard circular edge
+      #define S(rv) texture2D(uPool, vec2((hitOffset + floor((rv) * hitCount) + 0.5) / uPoolWidth, 0.5)).rgb
+      col = S(rand(block + off0));
+      #undef S
+    }
+
+    // Hard edge. Circles keep a faint white rim; squares get no border or
+    // divider so the two halves butt up cleanly.
     float alpha = step(minDist, hitRadius);
-
-    // Faint white border near the circle edge
-    const float BORDER = 4.0;
-    float inBorder = step(hitRadius - BORDER, minDist) * alpha;
-    col = mix(col, vec3(1.0), inBorder * 0.35);
+    if (uMode == 0) {
+      const float BORDER = 4.0;
+      float edge = step(hitRadius - BORDER, minDist) * alpha;
+      col = mix(col, vec3(1.0), edge * 0.35);
+    }
 
     gl_FragColor = vec4(col, alpha);
   }
@@ -108,22 +149,43 @@ function newTex(gl: WebGLRenderingContext): WebGLTexture {
   return t
 }
 
-function buildPoolTexture(clusters: ClusterDef[]) {
-  const offsets: number[] = []
-  const counts:  number[] = []
+interface PoolTextureBuild {
+  pixels:   Uint8Array
+  width:    number
+  offsetsL: number[]
+  countsL:  number[]
+  offsetsR: number[]
+  countsR:  number[]
+}
+
+function buildPoolTexture(clusters: ClusterDef[]): PoolTextureBuild {
+  const offsetsL: number[] = []
+  const countsL:  number[] = []
+  const offsetsR: number[] = []
+  const countsR:  number[] = []
+
   let total = 0
   for (const c of clusters) {
-    offsets.push(total)
-    const count = Math.max(c.pool.length, 1)
-    counts.push(count)
-    total += count
+    // Left pool always reserves at least 1 slot so the texture has a valid sample.
+    offsetsL.push(total)
+    const lCount = Math.max(c.pool.length, 1)
+    countsL.push(lCount)
+    total += lCount
+
+    // Right pool. Empty when poolR is missing; the shader renders the dim
+    // neutral instead of sampling.
+    const r = c.poolR ?? []
+    offsetsR.push(total)
+    countsR.push(r.length)
+    total += r.length
   }
+
   const width  = Math.max(total, 1)
   const pixels = new Uint8Array(width * 4)
   let pos = 0
   for (const c of clusters) {
     if (c.pool.length === 0) {
-      pixels[pos * 4 + 3] = 255  // opaque black placeholder
+      pixels[pos * 4 + 3] = 255  // opaque black placeholder for empty L
       pos++
     } else {
       for (const [r, g, b] of c.pool) {
@@ -134,26 +196,43 @@ function buildPoolTexture(clusters: ClusterDef[]) {
         pos++
       }
     }
+    for (const [r, g, b] of c.poolR ?? []) {
+      pixels[pos * 4]     = r
+      pixels[pos * 4 + 1] = g
+      pixels[pos * 4 + 2] = b
+      pixels[pos * 4 + 3] = 255
+      pos++
+    }
   }
-  return { pixels, width, offsets, counts }
+
+  return { pixels, width, offsetsL, countsL, offsetsR, countsR }
 }
 
 // ---- Component --------------------------------------------------------------
 
-// Cap DPR at 1.5 — rendering at full 3× on retina gives no visible benefit
-// but triples the fragment shader workload
+// Cap DPR at 1.5. Rendering at full 3x on retina gives no visible benefit
+// but triples the fragment shader workload.
 const getDPR = () => Math.min(window.devicePixelRatio ?? 1, 1.5)
 
-export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) {
+export default function ResultsCanvas({
+  clusters,
+  mode = "circles",
+}: {
+  clusters: ClusterDef[]
+  mode?:    ResultsCanvasMode
+}) {
   const canvasRef  = useRef<HTMLCanvasElement>(null)
   const glRef      = useRef<WebGLRenderingContext | null>(null)
   const rafRef     = useRef<number>(0)
   const poolTexRef = useRef<WebGLTexture | null>(null)
 
   const clustersRef    = useRef<ClusterDef[]>([])
+  const modeRef        = useRef<ResultsCanvasMode>(mode)
   const poolWidthRef   = useRef(1)
-  const offsetsRef     = useRef<number[]>([])
-  const countsRef      = useRef<number[]>([])
+  const offsetsLRef    = useRef<number[]>([])
+  const countsLRef     = useRef<number[]>([])
+  const offsetsRRef    = useRef<number[]>([])
+  const countsRRef     = useRef<number[]>([])
 
   // Uniform locations
   const uRes         = useRef<WebGLUniformLocation | null>(null)
@@ -162,8 +241,11 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
   const uPoolWidth_  = useRef<WebGLUniformLocation | null>(null)
   const uCenters_    = useRef<WebGLUniformLocation | null>(null)
   const uRadii_      = useRef<WebGLUniformLocation | null>(null)
-  const uOffsets_    = useRef<WebGLUniformLocation | null>(null)
-  const uCounts_     = useRef<WebGLUniformLocation | null>(null)
+  const uOffsetsL_   = useRef<WebGLUniformLocation | null>(null)
+  const uCountsL_    = useRef<WebGLUniformLocation | null>(null)
+  const uOffsetsR_   = useRef<WebGLUniformLocation | null>(null)
+  const uCountsR_    = useRef<WebGLUniformLocation | null>(null)
+  const uMode_       = useRef<WebGLUniformLocation | null>(null)
 
   // Initialize WebGL once
   useEffect(() => {
@@ -196,8 +278,11 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
     uPoolWidth_.current = gl.getUniformLocation(prog, "uPoolWidth")
     uCenters_.current   = gl.getUniformLocation(prog, "uCenters[0]")
     uRadii_.current     = gl.getUniformLocation(prog, "uRadii[0]")
-    uOffsets_.current   = gl.getUniformLocation(prog, "uOffsets[0]")
-    uCounts_.current    = gl.getUniformLocation(prog, "uCounts[0]")
+    uOffsetsL_.current  = gl.getUniformLocation(prog, "uOffsetsL[0]")
+    uCountsL_.current   = gl.getUniformLocation(prog, "uCountsL[0]")
+    uOffsetsR_.current  = gl.getUniformLocation(prog, "uOffsetsR[0]")
+    uCountsR_.current   = gl.getUniformLocation(prog, "uCountsR[0]")
+    uMode_.current      = gl.getUniformLocation(prog, "uMode")
 
     const verts = new Float32Array([-1,-1, 1,-1, -1,1, 1,-1, 1,1, -1,1])
     gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer())
@@ -222,20 +307,24 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
 
       const dpr = getDPR()
       const cls = clustersRef.current
-      const n   = Math.min(cls.length, 8)  // matches uCenters[8]
+      const n   = Math.min(cls.length, 64)  // matches uCenters[64]
 
-      const centersFlat = new Float32Array(16)  // 8 × vec2
-      const radiiFlat   = new Float32Array(8)
-      const offsetsFlat = new Float32Array(8)
-      const countsFlat  = new Float32Array(8).fill(1)
+      const centersFlat  = new Float32Array(128)
+      const radiiFlat    = new Float32Array(64)
+      const offsetsLFlat = new Float32Array(64)
+      const countsLFlat  = new Float32Array(64).fill(1)
+      const offsetsRFlat = new Float32Array(64)
+      const countsRFlat  = new Float32Array(64)
 
       for (let i = 0; i < n; i++) {
         const c = cls[i]
         centersFlat[i * 2]     = c.x * dpr
         centersFlat[i * 2 + 1] = canvas.height - c.y * dpr   // flip Y (WebGL origin = bottom-left)
-        radiiFlat[i]   = c.r * dpr
-        offsetsFlat[i] = offsetsRef.current[i] ?? 0
-        countsFlat[i]  = Math.max(countsRef.current[i] ?? 1, 1)
+        radiiFlat[i]    = c.r * dpr
+        offsetsLFlat[i] = offsetsLRef.current[i] ?? 0
+        countsLFlat[i]  = Math.max(countsLRef.current[i] ?? 1, 1)
+        offsetsRFlat[i] = offsetsRRef.current[i] ?? 0
+        countsRFlat[i]  = countsRRef.current[i] ?? 0
       }
 
       gl.viewport(0, 0, canvas.width, canvas.height)
@@ -246,10 +335,13 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
       gl.uniform1f(uTime_.current,       ts / 1000)
       gl.uniform1f(uDPR_.current,        dpr)
       gl.uniform1f(uPoolWidth_.current,  poolWidthRef.current)
+      gl.uniform1i(uMode_.current,       modeRef.current === "squares-split" ? 1 : 0)
       gl.uniform2fv(uCenters_.current,   centersFlat)
       gl.uniform1fv(uRadii_.current,     radiiFlat)
-      gl.uniform1fv(uOffsets_.current,   offsetsFlat)
-      gl.uniform1fv(uCounts_.current,    countsFlat)
+      gl.uniform1fv(uOffsetsL_.current,  offsetsLFlat)
+      gl.uniform1fv(uCountsL_.current,   countsLFlat)
+      gl.uniform1fv(uOffsetsR_.current,  offsetsRFlat)
+      gl.uniform1fv(uCountsR_.current,   countsRFlat)
 
       gl.activeTexture(gl.TEXTURE0)
       gl.bindTexture(gl.TEXTURE_2D, poolTexRef.current)
@@ -262,20 +354,27 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
     return () => cancelAnimationFrame(rafRef.current)
   }, [])
 
+  // Track mode changes (no shader recompile, just a uniform switch)
+  useEffect(() => {
+    modeRef.current = mode
+  }, [mode])
+
   // Rebuild pool texture when clusters change
   useEffect(() => {
     const gl = glRef.current
     if (gl && poolTexRef.current && clusters.length > 0) {
-      const { pixels, width, offsets, counts } = buildPoolTexture(clusters)
-      poolWidthRef.current = width
-      offsetsRef.current   = offsets
-      countsRef.current    = counts
+      const built = buildPoolTexture(clusters)
+      poolWidthRef.current = built.width
+      offsetsLRef.current  = built.offsetsL
+      countsLRef.current   = built.countsL
+      offsetsRRef.current  = built.offsetsR
+      countsRRef.current   = built.countsR
 
       gl.activeTexture(gl.TEXTURE0)
       gl.bindTexture(gl.TEXTURE_2D, poolTexRef.current)
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, width, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, pixels)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, built.width, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, built.pixels)
     }
-    // Update clustersRef last so the draw loop never sees new circles with stale texture/offsets
+    // Update clustersRef last so the draw loop never sees new geometry with stale texture/offsets
     clustersRef.current = clusters
   }, [clusters])
 

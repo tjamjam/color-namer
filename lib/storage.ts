@@ -26,15 +26,22 @@ export async function setColorVisionType(type: ColorVisionType): Promise<void> {
   await chrome.storage.local.set({ [CVD_KEY]: type })
 }
 
-export async function markColorNamed(hex: string, paletteSize: number): Promise<string[]> {
+export interface MarkColorResult {
+  list:          string[]
+  justCompleted: boolean
+}
+
+export async function markColorNamed(hex: string, paletteSize: number): Promise<MarkColorResult> {
   const named = await getNamedColors()
-  if (named.includes(hex)) return named
+  if (named.includes(hex)) return { list: named, justCompleted: false }
   const updated = [...named, hex]
-  // All colors done — reset the cycle
-  if (updated.length >= paletteSize) {
-    await chrome.storage.local.remove(NAMED_KEY)
-    return []
-  }
   await chrome.storage.local.set({ [NAMED_KEY]: updated })
-  return updated
+  return {
+    list:          updated,
+    justCompleted: updated.length === paletteSize,
+  }
+}
+
+export async function resetNamedColors(): Promise<void> {
+  await chrome.storage.local.remove(NAMED_KEY)
 }

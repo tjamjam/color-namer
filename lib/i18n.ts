@@ -34,6 +34,18 @@ export const EN = {
 
   settingsSaved:     "settings saved",
   settingsSyncError: "settings saved locally, sync failed",
+
+  // Your colors so far (R-key overlay)
+  yourColorsTitle:    "your colors so far",
+  yourColorsCount:    "{0} of {1} chips named",
+  yourColorsEmpty:    "you haven\u2019t named any colors yet",
+  yourColorsHint:     "press r or esc to close",
+  yourColorsLegendL:  "yours",
+  yourColorsLegendR:  "community",
+
+  // Bottom counter on the new tab
+  seeResultsHint:     "results unlock at 330",
+  seeResultsLink:     "see results",
 }
 
 type Strings = typeof EN
@@ -72,7 +84,7 @@ async function translateOne(text: string, lang: string): Promise<string> {
 async function loadTranslations(lang: string): Promise<Strings> {
   if (lang === "en") return EN
 
-  const cacheKey = `i18n_v5_${lang}`
+  const cacheKey = `i18n_v8_${lang}`
   try {
     const cached = localStorage.getItem(cacheKey)
     if (cached) return JSON.parse(cached)
