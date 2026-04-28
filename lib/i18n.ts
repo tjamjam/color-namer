@@ -30,7 +30,10 @@ export const EN = {
   cvdCompleteSub:       "complete color blindness",
   cvdUnknown:           "not sure",
   cvdUnknownSub:        "prefer not to say",
-  cvdFallback:          "not enough responses from colorblind users yet \u2014 showing everyone\u2019s results",
+  cvdFallback:          "not enough responses from colorblind users yet, showing everyone\u2019s results",
+
+  settingsSaved:     "settings saved",
+  settingsSyncError: "settings saved locally, sync failed",
 }
 
 type Strings = typeof EN
@@ -69,7 +72,7 @@ async function translateOne(text: string, lang: string): Promise<string> {
 async function loadTranslations(lang: string): Promise<Strings> {
   if (lang === "en") return EN
 
-  const cacheKey = `i18n_v4_${lang}`
+  const cacheKey = `i18n_v5_${lang}`
   try {
     const cached = localStorage.getItem(cacheKey)
     if (cached) return JSON.parse(cached)

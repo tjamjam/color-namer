@@ -14,6 +14,11 @@ export type RGB = [number, number, number]
 
 const MIN_CVD_RESULTS = 3
 
+// Hard cap on rendered clusters. Must match the shader array sizes in
+// components/ResultsCanvas.tsx (uCenters[8] etc.) and the layout slice in
+// components/ColorNamingUI.tsx buildClusters.
+export const MAX_DISPLAYED = 8
+
 export function useColorResults(
   chip:       Chip,
   language:   string,
@@ -55,7 +60,7 @@ export function useColorResults(
       return Object.entries(counts)
         .map(([name, count]) => ({ name, count, pct: (count / total) * 100 }))
         .sort((a, b) => b.pct - a.pct)
-        .slice(0, 10)
+        .slice(0, MAX_DISPLAYED)
     }
 
     const { data, error } = await supabase
@@ -64,7 +69,7 @@ export function useColorResults(
       .eq("color_hex", chip.hex)
       .eq("language", language)
       .order("count", { ascending: false })
-      .limit(10)
+      .limit(MAX_DISPLAYED)
 
     if (error || !data?.length) return []
     const total = data.reduce((sum, r) => sum + r.count, 0)
@@ -126,12 +131,14 @@ export function useColorResults(
     if (usingFallback) data = await fetchResults(true)
     setCvdFallback(usingFallback)
 
-    // Ensure the user's answer appears even if the DB hasn't caught up
+    // Ensure the user's answer appears even if the DB hasn't caught up.
+    // Strict popularity: re-sort and cap, so a rare submission falls off.
     if (!data.find((r) => r.name === name)) {
       data = [{ name, count: 1, pct: 0 }, ...data]
       const total = data.reduce((sum, r) => sum + r.count, 0)
       data = data.map((r) => ({ ...r, pct: (r.count / total) * 100 }))
       data.sort((a, b) => b.pct - a.pct)
+      data = data.slice(0, MAX_DISPLAYED)
     }
 
     const poolData = await Promise.all(data.map((r) => fetchPool(r.name, usingFallback)))

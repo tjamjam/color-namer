@@ -18,6 +18,8 @@ const VERTEX_SRC = `
   void main() { gl_Position = vec4(aPos, 0.0, 1.0); }
 `
 
+// Array sizes below MUST match MAX_DISPLAYED in lib/useColorResults.ts.
+// GLSL can't read JS, so this is a manual constraint.
 const FRAGMENT_SRC = `
   precision mediump float;
 
@@ -220,7 +222,7 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
 
       const dpr = getDPR()
       const cls = clustersRef.current
-      const n   = Math.min(cls.length, 8)
+      const n   = Math.min(cls.length, 8)  // matches uCenters[8]
 
       const centersFlat = new Float32Array(16)  // 8 × vec2
       const radiiFlat   = new Float32Array(8)
@@ -294,6 +296,7 @@ export default function ResultsCanvas({ clusters }: { clusters: ClusterDef[] }) 
   return (
     <canvas
       ref={canvasRef}
+      aria-hidden="true"
       style={{
         position: "fixed",
         inset: 0,

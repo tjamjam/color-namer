@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react"
+import { Settings } from "lucide-react"
 import ColorNamingUI from "~components/ColorNamingUI"
 import ColorBlindnessModal from "~components/ColorBlindnessModal"
 import { CHIPS, pickUnnamedChip, uiColor, luminance } from "~lib/palette"
@@ -19,6 +20,13 @@ export default function NewTab() {
   const [userToken, setUserToken] = useState<string | null>(null)
   const [cvdType, setCvdType] = useState<ColorVisionType | null | undefined>(undefined)
   const [showCvdModal, setShowCvdModal] = useState(false)
+  const [toast, setToast] = useState<{ kind: "success" | "error"; message: string } | null>(null)
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = setTimeout(() => setToast(null), 3000)
+    return () => clearTimeout(timer)
+  }, [toast])
 
   useEffect(() => {
     async function init() {
@@ -52,11 +60,17 @@ export default function NewTab() {
     await setColorVisionType(type)
     setCvdType(type)
     setShowCvdModal(false)
-    supabase.from("user_preferences").upsert({
+    const { error } = await supabase.from("user_preferences").upsert({
       user_token: userToken,
       cvd_type:   type,
       updated_at: new Date().toISOString(),
-    }).then(({ error }) => { if (error) console.error("CVD sync error:", error) })
+    })
+    if (error) {
+      console.error("CVD sync error:", error)
+      setToast({ kind: "error", message: t("settingsSyncError") })
+    } else {
+      setToast({ kind: "success", message: t("settingsSaved") })
+    }
   }
 
   async function handleSubmitted() {
@@ -97,7 +111,7 @@ export default function NewTab() {
           onNext={handleNext}
         />
       </div>
-      {/* Top left — responding in */}
+      {/* Top left, responding in */}
       <div style={{
         position:       "fixed",
         top:            0,
@@ -105,55 +119,56 @@ export default function NewTab() {
         height:         48,
         display:        "flex",
         alignItems:     "center",
-        paddingLeft:    24,
+        paddingLeft:    12,
       }}>
         <button
           onClick={() => chrome.tabs.create({ url: "chrome://settings/languages" })}
           style={{
             background:    "none",
             border:        "none",
-            padding:       0,
+            padding:       "8px 12px",
             cursor:        "pointer",
             fontSize:      13,
             letterSpacing: "0.03em",
             color:         col,
-            opacity:       0.6,
+            opacity:       0.85,
             fontFamily:    "inherit",
             transition:    "opacity 0.2s, color 0.8s ease",
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.opacity = "0.75")}
-          onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.4")}
+          onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
+          onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.85")}
         >
           {t("respondingIn", langName ?? langCode)}
         </button>
       </div>
 
-      {/* Top right — settings */}
+      {/* Top right, settings */}
       <button
         onClick={() => setShowCvdModal(true)}
         aria-label="Color vision settings"
         style={{
-          position:   "fixed",
-          top:        12,
-          right:      16,
-          background: "none",
-          border:     "none",
-          padding:    "8px 10px",
-          cursor:     "pointer",
-          fontSize:   22,
-          color:      col,
-          opacity:    0.65,
-          lineHeight: 1,
-          fontFamily: "inherit",
-          transition: "opacity 0.2s, color 0.8s ease",
+          position:       "fixed",
+          top:            8,
+          right:          12,
+          background:     "none",
+          border:         "none",
+          padding:        10,
+          cursor:         "pointer",
+          color:          col,
+          opacity:        0.85,
+          lineHeight:     0,
+          display:        "flex",
+          alignItems:     "center",
+          justifyContent: "center",
+          transition:     "opacity 0.2s, color 0.8s ease",
         }}
         onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
-        onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.65")}
+        onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.85")}
       >
-        ⚙
+        <Settings size={22} strokeWidth={1.5} aria-hidden="true" />
       </button>
 
-      {/* Bottom center — colors named */}
+      {/* Bottom center, colors named */}
       <div style={{
         position:       "fixed",
         bottom:         20,
@@ -164,15 +179,59 @@ export default function NewTab() {
         pointerEvents:  "none",
       }}>
         <span style={{
-          fontSize:      11,
+          fontSize:      12,
           letterSpacing: "0.04em",
           color:         col,
-          opacity:       0.4,
+          opacity:       0.75,
           transition:    "color 0.8s ease",
         }}>
           {t("colorsNamed", String(namedCount), String(CHIPS.length))}
         </span>
       </div>
+
+      {toast && (
+        <>
+          <style>{`
+            @keyframes cn-toast {
+              0%   { transform: translateY(-32px); opacity: 0; }
+              10%  { transform: translateY(0);     opacity: 1; }
+              90%  { transform: translateY(0);     opacity: 1; }
+              100% { transform: translateY(-32px); opacity: 0; }
+            }
+          `}</style>
+          <div
+            role="status"
+            aria-live="polite"
+            style={{
+              position:       "fixed",
+              top:            16,
+              left:           0,
+              right:          0,
+              display:        "flex",
+              justifyContent: "center",
+              pointerEvents:  "none",
+              zIndex:         50,
+            }}>
+            <div style={{
+              padding:              "12px 22px",
+              borderRadius:         10,
+              background:           `${glassBase}0.18)`,
+              border:               `1px solid ${glassBase}0.30)`,
+              backdropFilter:       "blur(20px)",
+              WebkitBackdropFilter: "blur(20px)",
+              fontSize:             13,
+              fontWeight:           500,
+              letterSpacing:        "0.04em",
+              color:                col,
+              boxShadow:            "0 8px 24px rgba(0,0,0,0.18)",
+              animation:            "cn-toast 3000ms ease-out forwards",
+              transition:           "color 0.8s ease, border-color 0.8s ease",
+            }}>
+              {toast.message}
+            </div>
+          </div>
+        </>
+      )}
 
       {showCvdModal && (
         <ColorBlindnessModal

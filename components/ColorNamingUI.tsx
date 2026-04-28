@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useMemo } from "react"
 import { CHIPS, luminance, uiColor } from "~lib/palette"
 import ResultsCanvas from "~components/ResultsCanvas"
 import { useTranslations } from "~lib/i18n"
-import { useColorResults } from "~lib/useColorResults"
+import { useColorResults, MAX_DISPLAYED } from "~lib/useColorResults"
 import type { Chip } from "~lib/palette"
 import type { ClusterDef } from "~components/ResultsCanvas"
 import type { ColorVisionType } from "~lib/storage"
@@ -64,20 +64,37 @@ function buildClusters(
   screenW: number,
   screenH: number,
 ): ClusterDef[] {
-  const maxR    = Math.min(screenW, screenH) * 0.28
-  const minR    = 55
-  const spreadR = Math.min(screenW, screenH) * 0.24
-  const n       = results.length
+  const TOP_RESERVE    = 80
+  const BOTTOM_RESERVE = 150
+  const usableH = Math.max(screenH - TOP_RESERVE - BOTTOM_RESERVE, 200)
+  const centerX = screenW / 2
+  const centerY = TOP_RESERVE + usableH / 2
 
-  return results.map((r, i) => {
-    let x = screenW / 2
-    let y = screenH / 2
+  const n       = Math.min(results.length, MAX_DISPLAYED)
+  const sinHalf = n >= 3 ? Math.sin(Math.PI / n) : 1
+
+  // Adjacent-pair non-overlap requires spread >= maxR / sin(pi/n).
+  // Combined with band fit (spread + maxR <= usableH/2), this bounds maxR.
+  const heightCap = n >= 3 ? usableH / (2 * (1 + 1 / sinHalf)) : usableH / 2
+  const maxR = Math.max(55, Math.min(heightCap, 220))
+  const minR = 55
+
+  const tightSpread = n <= 1 ? 0 : maxR / sinHalf
+  const spreadY = tightSpread
+  const spreadX = Math.max(
+    tightSpread,
+    Math.min(screenW / 2 - maxR - 24, screenW * 0.30)
+  )
+
+  return results.slice(0, MAX_DISPLAYED).map((r, i) => {
+    let x = centerX
+    let y = centerY
     if (n === 2) {
-      x = screenW / 2 + (i === 0 ? -spreadR : spreadR)
+      x = centerX + (i === 0 ? -spreadX : spreadX)
     } else if (n > 2) {
       const angle = (i / n) * Math.PI * 2 - Math.PI / 2
-      x = screenW / 2 + Math.cos(angle) * spreadR
-      y = screenH / 2 + Math.sin(angle) * spreadR
+      x = centerX + Math.cos(angle) * spreadX
+      y = centerY + Math.sin(angle) * spreadY
     }
     return {
       name:   r.name,
@@ -242,21 +259,24 @@ export default function ColorNamingUI({
       <>
         {clusters.length > 0 && <ResultsCanvas clusters={clusters} />}
 
-        {/* "you said X" + optional CVD fallback — top center */}
-        <div style={{
-          position:       "fixed",
-          top:            48,
-          left:           0,
-          right:          0,
-          display:        "flex",
-          flexDirection:  "column",
-          alignItems:     "center",
-          gap:            6,
-          pointerEvents:  "none",
-        }}>
-          <p style={{ ...labelStyle, fontSize: 14, letterSpacing: "0.03em" }}>
+        {/* "you said X" + optional CVD fallback, top center */}
+        <div
+          role="status"
+          aria-live="polite"
+          style={{
+            position:       "fixed",
+            top:            48,
+            left:           0,
+            right:          0,
+            display:        "flex",
+            flexDirection:  "column",
+            alignItems:     "center",
+            gap:            6,
+            pointerEvents:  "none",
+          }}>
+          <h1 style={{ ...labelStyle, fontSize: 14, letterSpacing: "0.03em" }}>
             {t("youSaid", submittedName ?? "")}
-          </p>
+          </h1>
           {cvdFallback && (
             <p style={{
               ...labelStyle,
@@ -295,7 +315,7 @@ export default function ColorNamingUI({
             <div style={{
               fontSize:   12,
               color:      col,
-              opacity:    0.55,
+              opacity:    0.8,
               marginTop:  3,
               transition: "color 0.8s ease",
             }}>
@@ -361,7 +381,7 @@ export default function ColorNamingUI({
 
   return (
     <div style={{ "--ui-color": col, maxWidth: 440, width: "100%", textAlign: "center" } as React.CSSProperties}>
-      <p style={{ ...labelStyle, marginBottom: 16 }}>{t("prompt")}</p>
+      <h1 id="cn-prompt" style={{ ...labelStyle, marginBottom: 16 }}>{t("prompt")}</h1>
       <div style={{
         display:            "flex",
         borderRadius:       12,
@@ -383,6 +403,7 @@ export default function ColorNamingUI({
           placeholder={t("placeholder")}
           autoComplete="off"
           spellCheck={false}
+          aria-labelledby="cn-prompt"
           style={{
             flex:       1,
             padding:    "14px 18px",
@@ -408,37 +429,38 @@ export default function ColorNamingUI({
             border:     "none",
             color:      col,
             cursor:     loading ? "default" : "pointer",
-            opacity:    loading ? 0.3 : 0.6,
+            opacity:    loading ? 0.3 : 0.85,
             transition: "opacity 0.2s, color 0.8s ease",
           }}
           onMouseEnter={(e) => { if (!loading) e.currentTarget.style.opacity = "1" }}
-          onMouseLeave={(e) => { if (!loading) e.currentTarget.style.opacity = "0.6" }}>
+          onMouseLeave={(e) => { if (!loading) e.currentTarget.style.opacity = "0.85" }}>
           →
         </button>
       </div>
-      <p style={{ marginTop: 10, fontSize: 12, letterSpacing: "0.08em", color: col, opacity: 0.4, transition: "color 0.8s ease" }}>
+      <p style={{ marginTop: 10, fontSize: 12, letterSpacing: "0.08em", color: col, opacity: 0.7, transition: "color 0.8s ease" }}>
         {chip.hex}
       </p>
 
-      {/* Inline feedback — only one shown at a time, priority: submitError > profane > one-word > suggestions */}
+      {/* Inline feedback, only one shown at a time, priority: submitError > profane > one-word > suggestions */}
+      <div role="status" aria-live="polite">
       {submitError && (
-        <p style={{ marginTop: 8, fontSize: 12, letterSpacing: "0.04em", color: col, opacity: 0.65, transition: "color 0.8s ease" }}>
+        <p style={{ marginTop: 8, fontSize: 12, letterSpacing: "0.04em", color: col, opacity: 0.85, transition: "color 0.8s ease" }}>
           {t("submitError")}
         </p>
       )}
       {!submitError && profane && (
-        <p style={{ marginTop: 8, fontSize: 12, letterSpacing: "0.04em", color: col, opacity: 0.65, transition: "color 0.8s ease" }}>
+        <p style={{ marginTop: 8, fontSize: 12, letterSpacing: "0.04em", color: col, opacity: 0.85, transition: "color 0.8s ease" }}>
           {t("keepItClean")}
         </p>
       )}
       {!submitError && !profane && tooManyWordsWarning && (
-        <p style={{ marginTop: 8, fontSize: 12, letterSpacing: "0.04em", color: col, opacity: 0.65, transition: "color 0.8s ease" }}>
+        <p style={{ marginTop: 8, fontSize: 12, letterSpacing: "0.04em", color: col, opacity: 0.85, transition: "color 0.8s ease" }}>
           {t("tooManyWords")}
         </p>
       )}
       {!submitError && !profane && !tooManyWordsWarning && suggestions.length > 0 && (
         <div style={{ marginTop: 10, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-          <p style={{ fontSize: 12, letterSpacing: "0.04em", color: col, opacity: 0.55, margin: 0, transition: "color 0.8s ease" }}>
+          <p style={{ fontSize: 12, letterSpacing: "0.04em", color: col, opacity: 0.8, margin: 0, transition: "color 0.8s ease" }}>
             {t("didYouMean")}
           </p>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
@@ -468,6 +490,7 @@ export default function ColorNamingUI({
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }

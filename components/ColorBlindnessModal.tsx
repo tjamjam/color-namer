@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useTranslations } from "~lib/i18n"
 import type { ColorVisionType } from "~lib/storage"
 
@@ -17,6 +17,7 @@ export default function ColorBlindnessModal({
 }) {
   const t = useTranslations()
   const [selected, setSelected] = useState<ColorVisionType>(initialValue ?? "none")
+  const firstOptionRef = useRef<HTMLButtonElement>(null)
 
   const optionLabels: Record<ColorVisionType, { label: string; sub: string }> = {
     "none":        { label: t("cvdNone"),       sub: t("cvdNoneSub") },
@@ -34,18 +35,28 @@ export default function ColorBlindnessModal({
     return () => window.removeEventListener("keydown", handleKey)
   }, [isOnboarding, onSave, onDismiss])
 
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null
+    firstOptionRef.current?.focus()
+    return () => previouslyFocused?.focus()
+  }, [])
+
   return (
-    <div style={{
-      position:       "fixed",
-      inset:          0,
-      display:        "flex",
-      alignItems:     "center",
-      justifyContent: "center",
-      zIndex:         100,
-      background:     "rgba(0,0,0,0.35)",
-      backdropFilter: "blur(6px)",
-      WebkitBackdropFilter: "blur(6px)",
-    }}>
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="cvd-modal-title"
+      style={{
+        position:       "fixed",
+        inset:          0,
+        display:        "flex",
+        alignItems:     "center",
+        justifyContent: "center",
+        zIndex:         100,
+        background:     "rgba(0,0,0,0.35)",
+        backdropFilter: "blur(6px)",
+        WebkitBackdropFilter: "blur(6px)",
+      }}>
       <div style={{
         background:   "#fff",
         borderRadius: 16,
@@ -61,16 +72,16 @@ export default function ColorBlindnessModal({
             aria-label="Close"
             style={{
               position:   "absolute",
-              top:        16,
-              right:      16,
+              top:        10,
+              right:      10,
               background: "none",
               border:     "none",
               color:      "#000",
-              opacity:    0.3,
+              opacity:    0.55,
               cursor:     "pointer",
               fontSize:   20,
               lineHeight: 1,
-              padding:    4,
+              padding:    10,
               fontFamily: "inherit",
             }}
           >
@@ -78,15 +89,17 @@ export default function ColorBlindnessModal({
           </button>
         )}
 
-        <p style={{
-          fontSize:      15,
-          fontWeight:    600,
-          letterSpacing: "0.02em",
-          color:         "#111",
-          margin:        "0 0 8px",
-        }}>
+        <h2
+          id="cvd-modal-title"
+          style={{
+            fontSize:      15,
+            fontWeight:    600,
+            letterSpacing: "0.02em",
+            color:         "#111",
+            margin:        "0 0 8px",
+          }}>
           {isOnboarding ? t("cvdTitleOnboarding") : t("cvdTitleSettings")}
-        </p>
+        </h2>
         <p style={{
           fontSize:      13,
           letterSpacing: "0.02em",
@@ -98,13 +111,15 @@ export default function ColorBlindnessModal({
         </p>
 
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          {OPTION_VALUES.map((value) => {
+          {OPTION_VALUES.map((value, idx) => {
             const isSelected = selected === value
             const { label, sub } = optionLabels[value]
             return (
               <button
                 key={value}
+                ref={idx === 0 ? firstOptionRef : undefined}
                 onClick={() => setSelected(value)}
+                aria-pressed={isSelected}
                 style={{
                   display:      "flex",
                   alignItems:   "baseline",
@@ -139,12 +154,12 @@ export default function ColorBlindnessModal({
               style={{
                 background:    "none",
                 border:        "none",
-                color:         "#888",
+                color:         "#666",
                 cursor:        "pointer",
                 fontSize:      12,
                 letterSpacing: "0.04em",
                 fontFamily:    "inherit",
-                padding:       0,
+                padding:       "10px 12px",
               }}
             >
               {t("cvdSkip")}
